@@ -2,6 +2,13 @@ spring:
   application:
     name: rootstock
 
+  autoconfigure:
+    # The pgvector VectorStore needs an EmbeddingModel. Embeddings are deferred
+    # until the RAG pipeline is built, so its auto-configuration is excluded here.
+    # Re-enable by removing this line and setting an embedding provider (README).
+    exclude:
+      - org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/rootstock}
     username: ${DB_USERNAME:rootstock}
@@ -30,7 +37,9 @@ spring:
       converse:
         chat:
           options:
-            model: ${BEDROCK_MODEL:us.anthropic.claude-3-5-sonnet-20241022-v2:0}
+            # Override with a model / inference-profile id your AWS account has
+            # been granted access to in the target region.
+            model: ${BEDROCK_MODEL:us.anthropic.claude-sonnet-4-20250514-v1:0}
             temperature: 0.7
     vectorstore:
       pgvector:

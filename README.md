@@ -71,19 +71,29 @@ Backend config lives in `backend/src/main/resources/application.yml`. Key knobs
 | `spring.datasource.url` | `DB_URL` | `jdbc:postgresql://localhost:5432/rootstock` |
 | `spring.datasource.username` / `.password` | `DB_USERNAME` / `DB_PASSWORD` | `rootstock` / `rootstock` |
 | `spring.ai.bedrock.aws.region` | `AWS_REGION` | `us-east-1` |
-| `spring.ai.bedrock.converse.chat.options.model` | `BEDROCK_MODEL` | `us.anthropic.claude-3-5-sonnet-20241022-v2:0` |
+| `spring.ai.bedrock.converse.chat.options.model` | `BEDROCK_MODEL` | `us.anthropic.claude-sonnet-4-20250514-v1:0` |
 | `rootstock.cors.allowed-origins` | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` |
+
+> The default model id is a starting point only. Set `BEDROCK_MODEL` to a model
+> or inference-profile id your AWS account has **explicitly been granted access
+> to** in the chosen region (Bedrock console → *Model access*). An un-granted or
+> retired id returns `404 ResourceNotFoundException`, surfaced by the API as
+> `503 AI backend unavailable`.
 
 ### Enabling embeddings / the pgvector VectorStore
 
-Embeddings are **off** in the scaffold (`spring.ai.model.embedding: none`), so the
-Spring AI `VectorStore` bean is not created — but the `vector` extension is already
-installed by `V1__init.sql`, so the database is ready. To turn on RAG:
+Embeddings are **off** in the scaffold: `spring.ai.model.embedding: none` and the
+pgvector store auto-configuration is listed under `spring.autoconfigure.exclude`
+in `application.yml`. The `vector` extension is already installed by
+`V1__init.sql`, so the database is ready. To turn on RAG:
 
-1. Set `spring.ai.model.embedding: bedrock-titan` (or another provider).
-2. Ensure `spring.ai.vectorstore.pgvector.dimensions` matches the embedding model
+1. Remove `PgVectorStoreAutoConfiguration` from `spring.autoconfigure.exclude`.
+2. Set `spring.ai.model.embedding: bedrock-titan` (or another provider), and add
+   its starter if needed (`spring-ai-starter-model-bedrock` is already on the
+   classpath and provides Titan embeddings).
+3. Ensure `spring.ai.vectorstore.pgvector.dimensions` matches the embedding model
    (Titan Text Embeddings v2 = 1024).
-3. Inject `VectorStore` where you need it.
+4. Inject `VectorStore` where you need it.
 
 ## Tests
 
