@@ -1,0 +1,70 @@
+spring:
+  application:
+    name: rootstock
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/rootstock}
+    username: ${DB_USERNAME:rootstock}
+    password: ${DB_PASSWORD:rootstock}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  ai:
+    model:
+      # Chat is served by AWS Bedrock (Converse API). Requires AWS credentials with
+      # Bedrock model access on the runtime (default AWS provider chain).
+      chat: bedrock-converse
+      # Embeddings are off until the RAG pipeline is built. Flip to `bedrock-titan`
+      # (see README) to activate the pgvector VectorStore auto-configuration.
+      embedding: none
+    bedrock:
+      aws:
+        region: ${AWS_REGION:us-east-1}
+      converse:
+        chat:
+          options:
+            model: ${BEDROCK_MODEL:us.anthropic.claude-3-5-sonnet-20241022-v2:0}
+            temperature: 0.7
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        dimensions: 1024
+        index-type: hnsw
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: RootStock
+    description: RootStock backend API
+
+rootstock:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  chat:
+    system-prompt: >
+      You are RootStock's assistant. Be concise, accurate, and helpful.
+
+logging:
+  level:
+    com.rootstock: DEBUG
+    org.springframework.ai: INFO

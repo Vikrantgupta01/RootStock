@@ -1,0 +1,15 @@
+spring:
+  # Tests run against a Testcontainers Postgres (pgvector image) wired via
+  # @ServiceConnection. No AWS calls: the AI models are disabled so the context
+  # loads without credentials. Slice tests mock ChatService directly.
+  ai:
+    model:
+      chat: none
+      embedding: none
+    vectorstore:
+      pgvector:
+        initialize-schema: false
+
+logging:
+  level:
+    com.rootstock: DEBUG

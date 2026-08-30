@@ -1,0 +1,21 @@
+# Root-level ignores. Module-specific ignores live in backend/.gitignore and
+# frontend/.gitignore.
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Env files (never commit real credentials)
+.env
+.env.local
+*.env
+
+# Build output (also covered per-module)
+target/
+dist/
+node_modules/
+
+# Logs
+*.log
