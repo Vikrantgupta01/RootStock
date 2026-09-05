@@ -27,6 +27,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		return problem;
 	}
 
+	@ExceptionHandler(ResourceNotFoundException.class)
+	public ProblemDetail handleNotFound(ResourceNotFoundException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+		problem.setTitle("Not found");
+		return problem;
+	}
+
+	@ExceptionHandler(DuplicateResourceException.class)
+	public ProblemDetail handleDuplicate(DuplicateResourceException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+		problem.setTitle("Conflict");
+		return problem;
+	}
+
 	@ExceptionHandler(Exception.class)
 	public ProblemDetail handleUnexpected(Exception ex) {
 		log.error("Unhandled exception", ex);
