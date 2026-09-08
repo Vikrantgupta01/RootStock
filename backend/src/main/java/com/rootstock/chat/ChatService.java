@@ -28,6 +28,7 @@ public class ChatService {
 	private final RootStockProperties properties;
 
 	private volatile ChatClient chatClient;
+	private volatile ChatClient bareClient;
 
 	public ChatService(ObjectProvider<ChatClient.Builder> builderProvider, RootStockProperties properties) {
 		this.builderProvider = builderProvider;
@@ -49,19 +50,48 @@ public class ChatService {
 		return client().prompt().user(message).stream().content();
 	}
 
+	/**
+	 * One-off completion with a caller-supplied system and user prompt (used by
+	 * RAG, which composes its own context-grounded prompt per profile).
+	 */
+	public String generate(String systemPrompt, String userPrompt) {
+		ChatClient client = bareClient();
+		try {
+			return client.prompt().system(systemPrompt).user(userPrompt).call().content();
+		}
+		catch (RuntimeException ex) {
+			log.error("Chat request to the AI provider failed", ex);
+			throw new AiUnavailableException("The AI provider could not be reached.", ex);
+		}
+	}
+
+	private ChatClient bareClient() {
+		ChatClient existing = this.bareClient;
+		if (existing != null) {
+			return existing;
+		}
+		ChatClient built = requireBuilder().build();
+		this.bareClient = built;
+		return built;
+	}
+
 	private ChatClient client() {
 		ChatClient existing = this.chatClient;
 		if (existing != null) {
 			return existing;
 		}
+		ChatClient built = requireBuilder().defaultSystem(properties.chat().systemPrompt()).build();
+		this.chatClient = built;
+		return built;
+	}
+
+	private ChatClient.Builder requireBuilder() {
 		ChatClient.Builder builder = builderProvider.getIfAvailable();
 		if (builder == null) {
 			throw new AiUnavailableException(
 					"No chat backend is configured. Provide AWS Bedrock credentials and "
 							+ "set spring.ai.model.chat=bedrock-converse.");
 		}
-		ChatClient built = builder.defaultSystem(properties.chat().systemPrompt()).build();
-		this.chatClient = built;
-		return built;
+		return builder;
 	}
 }

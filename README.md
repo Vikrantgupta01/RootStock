@@ -80,20 +80,35 @@ Backend config lives in `backend/src/main/resources/application.yml`. Key knobs
 > retired id returns `404 ResourceNotFoundException`, surfaced by the API as
 > `503 AI backend unavailable`.
 
-## Knowledge base / RAG (phase 1: ingestion & storage)
+## Knowledge base / RAG (phases 1–2: ingestion, storage, profiles, query)
 
-Tenant-scoped document ingestion into pgvector. Tenant comes from the
+Tenant-scoped document ingestion + retrieval over pgvector. Tenant comes from the
 `X-Tenant-Id` header (`default` if absent) — a stub until real auth lands.
 
+**Documents & versions**
 - `POST /api/rag/documents` (multipart `file`, optional `sourceKey`, `displayName`)
   → stores the blob, creates version 1, queues ingestion. Re-POST the same
   `sourceKey`, or `POST /api/rag/documents/{id}/versions`, to add a version.
 - Background poller parses (Apache Tika), chunks (overlapping character windows),
-  embeds, and writes to `vector_store_<dim>` with tenant/document/version/profile
-  metadata. Watch progress at `GET /api/rag/jobs`.
+  embeds, writes to `vector_store_<dim>` tagged with the embedding model + chunk
+  layout that produced each chunk. Watch progress at `GET /api/rag/jobs`.
 - `POST /api/rag/documents/{id}/versions/{n}/activate` — roll forward/back;
   `.../reindex` re-embeds; `GET .../content` downloads; `DELETE` purges chunks.
-- `GET /api/rag/documents` / `GET /api/rag/documents/{id}` — list / detail.
+
+**Tuning profiles** — named, versioned config bundles (chunking, embedding model,
+top-k, threshold, prompt template, …).
+- `GET/POST /api/rag/profiles`, `GET /api/rag/profiles/{id}`,
+  `GET/POST /api/rag/profiles/{id}/versions` (editing makes a new version).
+- `POST /api/rag/profiles/{id}/activate` — a query-time-only change flips
+  immediately; a chunking/embedding change runs a **blue/green re-index**: the
+  previous profile keeps serving until every re-index job for the new one
+  succeeds, then the pointer flips and the old layout's chunks are cleaned up.
+  Poll `GET /api/rag/profiles/activations/{activationId}`.
+
+**Query** — `POST /api/rag/query` `{ question, profileId?, topK?, similarityThreshold? }`
+→ `{ answer, grounded, citations[], profileId, … }`. Retrieves the tenant's active
+indexed chunks under the profile's layout, grounds the profile's prompt template
+in them, and answers via the Bedrock chat model (503 until a model is granted).
 
 Config (`rootstock.rag.*` in `application.yml`, all env-overridable):
 
@@ -112,9 +127,8 @@ RAG_BLOB_BACKEND=s3 RAG_S3_ENDPOINT=http://localhost:9000 \
 AWS_ACCESS_KEY_ID=rootstock AWS_SECRET_ACCESS_KEY=rootstock123 ./mvnw spring-boot:run
 ```
 
-**Still to come:** tunable RAG profiles + blue/green re-index (phase 2), the
-`/knowledge` UI (phase 3), Bedrock model fine-tuning jobs (phase 4), and the
-`POST /api/rag/query` retrieval endpoint (phase 2).
+**Still to come:** the `/knowledge` UI (phase 3) and Bedrock model fine-tuning
+jobs (phase 4).
 
 ## Tests
 

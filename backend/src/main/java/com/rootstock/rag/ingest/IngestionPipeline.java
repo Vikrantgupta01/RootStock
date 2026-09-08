@@ -76,10 +76,14 @@ public class IngestionPipeline {
 						.orElseThrow(() -> new NoSuchElementException("rag_profile " + job.getProfileId()))
 				: profileService.activeProfile(version.getTenantId());
 
-		VectorStore store = vectorStores.forModel(profile.getEmbeddingModelId());
+		String embeddingModelId = profile.getEmbeddingModelId();
+		String chunkConfig = profile.chunkConfigKey();
+		VectorStore store = vectorStores.forModel(embeddingModelId);
 
-		// Idempotency: drop any chunks a previous attempt for this version wrote.
-		store.delete(RagFilters.forVersion(version.getTenantId(), version.getId().toString()));
+		// Idempotency: drop only chunks this exact (version, layout) previously wrote,
+		// so a re-index never disturbs the currently-active profile's chunks.
+		store.delete(RagFilters.forVersionAndChunkConfig(
+				version.getTenantId(), version.getId().toString(), embeddingModelId, chunkConfig));
 
 		String text = extractText(readBytes(version.getBlobKey()));
 		List<String> pieces = TextChunker.chunk(text, profile.getChunkingStrategy(),
@@ -91,7 +95,8 @@ public class IngestionPipeline {
 			metadata.put(RagChunkMetadata.TENANT_ID, version.getTenantId());
 			metadata.put(RagChunkMetadata.DOCUMENT_ID, version.getDocumentId().toString());
 			metadata.put(RagChunkMetadata.DOCUMENT_VERSION_ID, version.getId().toString());
-			metadata.put(RagChunkMetadata.PROFILE_ID, profile.getId().toString());
+			metadata.put(RagChunkMetadata.EMBEDDING_MODEL_ID, embeddingModelId);
+			metadata.put(RagChunkMetadata.CHUNK_CONFIG, chunkConfig);
 			metadata.put(RagChunkMetadata.CHUNK_INDEX, i);
 			chunks.add(new org.springframework.ai.document.Document(pieces.get(i), metadata));
 		}
@@ -99,16 +104,31 @@ public class IngestionPipeline {
 			store.add(chunks);
 		}
 
-		version.setChunkCount(chunks.size());
-		version.setStatus(DocumentStatus.INDEXED);
-		version.setIndexedAt(Instant.now());
-		version.setErrorMessage(null);
-		versions.save(version);
-		log.info("Indexed document_version {} ({} chunks) under profile {}",
-				version.getId(), chunks.size(), profile.getId());
+		// Only the INGEST of the currently-active layout moves the version's own status.
+		if (job.getKind() == IngestionJobKind.INGEST || !profile.layoutDiffersFrom(
+				profileService.activeProfile(version.getTenantId()))) {
+			version.setChunkCount(chunks.size());
+			version.setStatus(DocumentStatus.INDEXED);
+			version.setIndexedAt(Instant.now());
+			version.setErrorMessage(null);
+			versions.save(version);
+		}
+		log.info("Indexed document_version {} ({} chunks) as {}/{}",
+				version.getId(), chunks.size(), embeddingModelId, chunkConfig);
 	}
 
 	private void cleanup(IngestionJob job) {
+		if (job.getProfileId() != null) {
+			// Blue/green tail: purge the superseded profile layout's chunks.
+			RagProfile superseded = profiles.findById(job.getProfileId())
+					.orElseThrow(() -> new NoSuchElementException("rag_profile " + job.getProfileId()));
+			vectorStores.forModel(superseded.getEmbeddingModelId())
+					.delete(RagFilters.forChunkConfig(superseded.getTenantId(),
+							superseded.getEmbeddingModelId(), superseded.chunkConfigKey()));
+			log.info("Cleaned up chunks for superseded profile layout {}/{}",
+					superseded.getEmbeddingModelId(), superseded.chunkConfigKey());
+			return;
+		}
 		DocumentVersion version = versions.findById(job.getDocumentVersionId())
 				.orElseThrow(() -> new NoSuchElementException("document_version " + job.getDocumentVersionId()));
 		RagProfile profile = profileService.activeProfile(version.getTenantId());

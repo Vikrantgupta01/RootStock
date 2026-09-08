@@ -34,4 +34,8 @@ public interface IngestionJobRepository extends JpaRepository<IngestionJob, UUID
 	java.util.Optional<IngestionJob> findByTenantIdAndId(String tenantId, UUID id);
 
 	long countByStateIn(List<IngestionJobState> states);
+
+	long countByProfileIdAndKind(UUID profileId, IngestionJobKind kind);
+
+	long countByProfileIdAndKindAndStateIn(UUID profileId, IngestionJobKind kind, List<IngestionJobState> states);
 }

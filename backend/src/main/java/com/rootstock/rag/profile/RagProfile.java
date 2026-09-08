@@ -171,6 +171,22 @@ public class RagProfile {
 		return fineTunedModelArn;
 	}
 
+	/**
+	 * Identifies the physical chunk layout this profile expects, tagged onto every
+	 * chunk. Two profile versions with the same key share chunks; a different key
+	 * means a re-index is required to switch.
+	 */
+	public String chunkConfigKey() {
+		return chunkingStrategy + ":" + chunkSize + ":" + chunkOverlap;
+	}
+
+	/** Whether switching from {@code other} to this profile needs a re-index. */
+	public boolean layoutDiffersFrom(RagProfile other) {
+		return other == null
+				|| !embeddingModelId.equals(other.embeddingModelId)
+				|| !chunkConfigKey().equals(other.chunkConfigKey());
+	}
+
 	public Instant getCreatedAt() {
 		return createdAt;
 	}
