@@ -41,6 +41,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		return problem;
 	}
 
+	@ExceptionHandler(UnsupportedContentTypeException.class)
+	public ProblemDetail handleUnsupportedContentType(UnsupportedContentTypeException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNSUPPORTED_MEDIA_TYPE, ex.getMessage());
+		problem.setTitle("Unsupported media type");
+		return problem;
+	}
+
+	@ExceptionHandler(IllegalArgumentException.class)
+	public ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+		problem.setTitle("Bad request");
+		return problem;
+	}
+
 	@ExceptionHandler(Exception.class)
 	public ProblemDetail handleUnexpected(Exception ex) {
 		log.error("Unhandled exception", ex);

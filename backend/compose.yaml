@@ -17,5 +17,41 @@ services:
       timeout: 3s
       retries: 10
 
+  # S3-compatible object store for the RAG blob backend. Opt-in:
+  #   docker compose -f backend/compose.yaml --profile s3 up -d
+  # then run the app with RAG_BLOB_BACKEND=s3 RAG_S3_ENDPOINT=http://localhost:9000
+  # AWS_ACCESS_KEY_ID=rootstock AWS_SECRET_ACCESS_KEY=rootstock123
+  minio:
+    image: 'minio/minio:latest'
+    profiles: ['s3']
+    command: server /data --console-address ":9001"
+    environment:
+      - 'MINIO_ROOT_USER=rootstock'
+      - 'MINIO_ROOT_PASSWORD=rootstock123'
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - 'rootstock_minio:/data'
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio-init:
+    image: 'minio/mc:latest'
+    profiles: ['s3']
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 rootstock rootstock123 &&
+      mc mb --ignore-existing local/rootstock-rag &&
+      echo 'bucket ready'
+      "
+
 volumes:
   rootstock_pgdata:
+  rootstock_minio:

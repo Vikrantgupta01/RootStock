@@ -1,0 +1,290 @@
+package com.rootstock.rag.document;
+
+import com.rootstock.common.ResourceNotFoundException;
+import com.rootstock.common.UnsupportedContentTypeException;
+import com.rootstock.rag.RagProperties;
+import com.rootstock.rag.blob.BlobStore;
+import com.rootstock.rag.document.dto.DocumentDetailResponse;
+import com.rootstock.rag.document.dto.DocumentSummaryResponse;
+import com.rootstock.rag.document.dto.DocumentVersionResponse;
+import com.rootstock.rag.document.dto.UploadResponse;
+import com.rootstock.rag.ingest.IngestionJob;
+import com.rootstock.rag.ingest.IngestionJobKind;
+import com.rootstock.rag.ingest.IngestionJobRepository;
+import com.rootstock.rag.profile.RagProfileService;
+import com.rootstock.rag.tenant.TenantContext;
+import com.rootstock.rag.vector.RagFilters;
+import com.rootstock.rag.vector.VectorStoreRegistry;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
+
+@Service
+public class DocumentService {
+
+	private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
+			"application/pdf",
+			"text/plain", "text/markdown", "text/html", "text/csv", "application/json",
+			"application/msword",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			"application/vnd.ms-powerpoint",
+			"application/vnd.openxmlformats-officedocument.presentationml.presentation");
+
+	private final DocumentRepository documents;
+	private final DocumentVersionRepository versions;
+	private final IngestionJobRepository jobs;
+	private final RagProfileService profiles;
+	private final BlobStore blobStore;
+	private final VectorStoreRegistry vectorStores;
+	private final RagProperties properties;
+
+	public DocumentService(DocumentRepository documents, DocumentVersionRepository versions,
+			IngestionJobRepository jobs, RagProfileService profiles, BlobStore blobStore,
+			VectorStoreRegistry vectorStores, RagProperties properties) {
+		this.documents = documents;
+		this.versions = versions;
+		this.jobs = jobs;
+		this.profiles = profiles;
+		this.blobStore = blobStore;
+		this.vectorStores = vectorStores;
+		this.properties = properties;
+	}
+
+	// ---- queries -------------------------------------------------------------
+
+	@Transactional(readOnly = true)
+	public Page<DocumentSummaryResponse> list(Pageable pageable) {
+		String tenantId = TenantContext.require();
+		return documents.findByTenantId(tenantId, pageable).map(this::toSummary);
+	}
+
+	@Transactional(readOnly = true)
+	public DocumentDetailResponse get(UUID documentId) {
+		Document document = requireDocument(documentId);
+		return DocumentDetailResponse.of(document, versions.findByDocumentIdOrderByVersionNoDesc(documentId));
+	}
+
+	// ---- uploads ----------------------------------------------------------- -
+
+	@Transactional
+	public UploadResponse upload(MultipartFile file, String sourceKeyOverride, String displayNameOverride) {
+		String tenantId = TenantContext.require();
+		byte[] bytes = read(file);
+		String contentType = contentTypeOf(file);
+		requireSupported(contentType);
+
+		String sourceKey = sanitizeKey(firstNonBlank(sourceKeyOverride, file.getOriginalFilename(), "upload"));
+		String displayName = firstNonBlank(displayNameOverride, file.getOriginalFilename(), sourceKey);
+
+		Document document = documents.findByTenantIdAndSourceKey(tenantId, sourceKey).orElse(null);
+		boolean firstUpload = document == null;
+		if (firstUpload) {
+			document = documents.save(new Document(tenantId, sourceKey, displayName, contentType));
+		}
+		else {
+			document.setDisplayName(displayName);
+			document.setContentType(contentType);
+		}
+
+		DocumentVersion version = appendVersion(document, bytes, contentType);
+		if (firstUpload) {
+			document.setActiveVersionId(version.getId());
+		}
+		return new UploadResponse(document.getId(), DocumentVersionResponse.of(version, document.getActiveVersionId()));
+	}
+
+	@Transactional
+	public UploadResponse addVersion(UUID documentId, MultipartFile file) {
+		Document document = requireDocument(documentId);
+		byte[] bytes = read(file);
+		String contentType = contentTypeOf(file);
+		requireSupported(contentType);
+		document.setContentType(contentType);
+
+		DocumentVersion version = appendVersion(document, bytes, contentType);
+		return new UploadResponse(document.getId(), DocumentVersionResponse.of(version, document.getActiveVersionId()));
+	}
+
+	private DocumentVersion appendVersion(Document document, byte[] bytes, String contentType) {
+		String hash = sha256Hex(bytes);
+		String blobKey = "sha256/" + hash;
+		blobStore.put(blobKey, bytes, contentType);
+
+		int nextVersionNo = versions.findFirstByDocumentIdOrderByVersionNoDesc(document.getId())
+				.map(v -> v.getVersionNo() + 1)
+				.orElse(1);
+		DocumentVersion version = versions.save(new DocumentVersion(
+				document.getId(), document.getTenantId(), nextVersionNo, blobKey, hash, bytes.length));
+
+		UUID profileId = profiles.activeProfile(document.getTenantId()).getId();
+		jobs.save(new IngestionJob(document.getTenantId(), IngestionJobKind.INGEST,
+				version.getId(), profileId, properties.ingest().maxAttempts()));
+		return version;
+	}
+
+	// ---- version lifecycle --------------------------------------------------
+
+	@Transactional
+	public DocumentDetailResponse activateVersion(UUID documentId, int versionNo) {
+		Document document = requireDocument(documentId);
+		DocumentVersion version = requireVersion(document.getId(), versionNo);
+		document.setActiveVersionId(version.getId());
+		return DocumentDetailResponse.of(document, versions.findByDocumentIdOrderByVersionNoDesc(document.getId()));
+	}
+
+	@Transactional
+	public DocumentVersionResponse reindexVersion(UUID documentId, int versionNo) {
+		Document document = requireDocument(documentId);
+		DocumentVersion version = requireVersion(document.getId(), versionNo);
+		UUID profileId = profiles.activeProfile(document.getTenantId()).getId();
+		jobs.save(new IngestionJob(document.getTenantId(), IngestionJobKind.REINDEX,
+				version.getId(), profileId, properties.ingest().maxAttempts()));
+		version.setStatus(DocumentStatus.PENDING);
+		version.setErrorMessage(null);
+		return DocumentVersionResponse.of(version, document.getActiveVersionId());
+	}
+
+	@Transactional
+	public void deleteVersion(UUID documentId, int versionNo) {
+		Document document = requireDocument(documentId);
+		DocumentVersion version = requireVersion(document.getId(), versionNo);
+		purgeChunks(document.getTenantId(), version.getId());
+		if (version.getId().equals(document.getActiveVersionId())) {
+			document.setActiveVersionId(null);
+		}
+		versions.delete(version);
+	}
+
+	@Transactional
+	public void deleteDocument(UUID documentId) {
+		Document document = requireDocument(documentId);
+		for (DocumentVersion version : versions.findByDocumentIdOrderByVersionNoDesc(document.getId())) {
+			purgeChunks(document.getTenantId(), version.getId());
+		}
+		document.setActiveVersionId(null);
+		documents.delete(document); // document_version rows cascade in the DB
+	}
+
+	private void purgeChunks(String tenantId, UUID versionId) {
+		String embeddingModelId = profiles.activeProfile(tenantId).getEmbeddingModelId();
+		vectorStores.forModel(embeddingModelId)
+				.delete(RagFilters.forVersion(tenantId, versionId.toString()));
+	}
+
+	// ---- download ---------------------------------------------------------- -
+
+	@Transactional(readOnly = true)
+	public Download download(UUID documentId, int versionNo) {
+		Document document = requireDocument(documentId);
+		DocumentVersion version = requireVersion(document.getId(), versionNo);
+		Optional<URI> presigned = blobStore.presignGet(version.getBlobKey(), document.getDisplayName());
+		return presigned
+				.map(Download::redirect)
+				.orElseGet(() -> Download.stream(blobStore.get(version.getBlobKey()),
+						document.getContentType(), document.getDisplayName(), version.getSizeBytes()));
+	}
+
+	/** Either a redirect to a presigned URL, or a stream to proxy through the API. */
+	public record Download(URI redirectUri, InputStream body, String contentType, String filename, long sizeBytes) {
+
+		static Download redirect(URI uri) {
+			return new Download(uri, null, null, null, 0);
+		}
+
+		static Download stream(InputStream body, String contentType, String filename, long sizeBytes) {
+			return new Download(null, body, contentType, filename, sizeBytes);
+		}
+
+		public boolean isRedirect() {
+			return redirectUri != null;
+		}
+	}
+
+	// ---- helpers ----------------------------------------------------------- -
+
+	private DocumentSummaryResponse toSummary(Document d) {
+		List<DocumentVersion> all = versions.findByDocumentIdOrderByVersionNoDesc(d.getId());
+		DocumentStatus activeStatus = all.stream()
+				.filter(v -> v.getId().equals(d.getActiveVersionId()))
+				.map(DocumentVersion::getStatus)
+				.findFirst()
+				.orElse(null);
+		return DocumentSummaryResponse.of(d, all.size(), activeStatus);
+	}
+
+	private Document requireDocument(UUID documentId) {
+		return documents.findByTenantIdAndId(TenantContext.require(), documentId)
+				.orElseThrow(() -> ResourceNotFoundException.of("Document", documentId));
+	}
+
+	private DocumentVersion requireVersion(UUID documentId, int versionNo) {
+		return versions.findByDocumentIdAndVersionNo(documentId, versionNo)
+				.orElseThrow(() -> new ResourceNotFoundException(
+						"Version " + versionNo + " of document " + documentId + " was not found."));
+	}
+
+	private void requireSupported(String contentType) {
+		String base = contentType == null ? "" : contentType.split(";", 2)[0].trim().toLowerCase();
+		if (!ALLOWED_CONTENT_TYPES.contains(base)) {
+			throw new UnsupportedContentTypeException("Unsupported content type: " + contentType
+					+ ". Allowed: " + ALLOWED_CONTENT_TYPES);
+		}
+	}
+
+	private static byte[] read(MultipartFile file) {
+		if (file == null || file.isEmpty()) {
+			throw new IllegalArgumentException("Uploaded file is empty");
+		}
+		try {
+			return file.getBytes();
+		}
+		catch (IOException e) {
+			throw new IllegalStateException("Failed to read upload", e);
+		}
+	}
+
+	private static String contentTypeOf(MultipartFile file) {
+		String ct = file.getContentType();
+		return StringUtils.hasText(ct) ? ct : "application/octet-stream";
+	}
+
+	private static String sanitizeKey(String raw) {
+		String name = Paths.get(raw).getFileName().toString().trim();
+		if (name.isEmpty() || name.equals("..") || name.contains("/") || name.contains("\\")) {
+			throw new IllegalArgumentException("Invalid source key: " + raw);
+		}
+		return name.length() > 512 ? name.substring(0, 512) : name;
+	}
+
+	private static String firstNonBlank(String... values) {
+		for (String v : values) {
+			if (StringUtils.hasText(v)) {
+				return v.trim();
+			}
+		}
+		return "upload";
+	}
+
+	private static String sha256Hex(byte[] bytes) {
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+		}
+		catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException(e);
+		}
+	}
+}

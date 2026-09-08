@@ -6,9 +6,18 @@ spring:
     model:
       chat: none
       embedding: none
-    vectorstore:
-      pgvector:
-        initialize-schema: false
+
+rootstock:
+  rag:
+    embedding:
+      mode: fake
+    blob:
+      backend: filesystem
+      filesystem:
+        dir: ${java.io.tmpdir}/rootstock-test-blobs
+    ingest:
+      # Integration tests drive ingestion explicitly instead of via the scheduler.
+      poller-enabled: false
 
 logging:
   level:
