@@ -127,8 +127,20 @@ RAG_BLOB_BACKEND=s3 RAG_S3_ENDPOINT=http://localhost:9000 \
 AWS_ACCESS_KEY_ID=rootstock AWS_SECRET_ACCESS_KEY=rootstock123 ./mvnw spring-boot:run
 ```
 
-**Still to come:** the `/knowledge` UI (phase 3) and Bedrock model fine-tuning
-jobs (phase 4).
+**Frontend** — the `/knowledge` page (React) drives all of the above:
+- **Documents** tab — drag-and-drop upload with progress; expandable version rows
+  (activate / reindex / download / delete); add-a-version dropzone per document.
+- **Tuning** tab — edit a profile's knobs, "Save version" vs "Save & activate"
+  (warns when a re-index is required), version history with per-version activate,
+  live blue/green activation banner.
+- **Playground** tab — ask a question, see the grounded answer with citation
+  chips; optional top-k / threshold overrides.
+- **Activity** tab — the ingestion job feed, auto-refreshing while work is queued.
+
+A **Tenant** field in the header sets the `X-Tenant-Id` header for every request
+(stored in `localStorage`).
+
+**Still to come:** Bedrock model fine-tuning jobs (phase 4).
 
 ## Tests
 
