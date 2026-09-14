@@ -4,8 +4,10 @@ AI-powered web app. Java 21 / Spring Boot backend with Spring AI wired to **AWS
 Bedrock**, PostgreSQL + **pgvector** for persistence and embeddings, and a React +
 TypeScript frontend.
 
-This is a **scaffold**: it ships a health endpoint and one sample AI chat endpoint.
-The real domain model arrives with the first feature.
+Ships a `Customer` CRUD sample and a tenant-scoped **knowledge base / RAG**
+subsystem (document ingestion, tunable profiles, blue/green re-index, grounded
+query) — see below. For how to run and test all of it, see
+**[TESTING.md](TESTING.md)**.
 
 ## Layout
 
@@ -146,19 +148,13 @@ A **Tenant** field in the header sets the `X-Tenant-Id` header for every request
 
 ```bash
 cd backend && ./mvnw test
-```
-
-- Controller slice tests (`*ControllerTest`) — no Docker/AWS.
-- `RootStockApplicationTests`, `CustomerRepositoryTest`, `RagIngestionIntegrationTest`
-  — full/JPA context against a Testcontainers Postgres with Flyway;
-  **skip automatically** when Docker is not running.
-
-```bash
 cd frontend && npm run build && npm run lint
 ```
 
+See **[TESTING.md](TESTING.md)** for what each suite covers and a full manual
+walkthrough (API + UI) of the Customer and RAG features.
+
 ## Not yet included
 
-Authentication/authorization (tenant is a header stub), CI, deployment manifests,
-RAG retrieval/query + tunable profiles, the `/knowledge` UI, and Bedrock
-fine-tuning. Each is its own follow-up.
+Authentication/authorization (tenant is a header stub), CI, deployment
+manifests, and Bedrock model fine-tuning. Each is its own follow-up.
