@@ -88,6 +88,13 @@ rootstock:
         region: ${AWS_REGION:us-east-1}
         path-style-access: true
       presign-ttl: 15m
+    bedrock:
+      # AWS Bedrock Knowledge Base (Aurora PostgreSQL Serverless v2 vector store)
+      # backing RAG retrieval/ingestion. Replaces the pgvector-based pipeline below
+      # once the Phase 4 cutover lands -- see the migration plan.
+      knowledge-base-id: ${RAG_BEDROCK_KB_ID:}
+      data-source-id: ${RAG_BEDROCK_DATA_SOURCE_ID:}
+      region: ${AWS_REGION:us-east-1}
     embedding:
       # fake (offline, deterministic) or bedrock (Titan Text Embeddings v2)
       mode: ${RAG_EMBEDDING_MODE:fake}
