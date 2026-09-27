@@ -38,6 +38,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.DockerClientFactory;
 import software.amazon.awssdk.core.document.Document;
+import software.amazon.awssdk.services.bedrockagent.model.IngestionJobStatistics;
 import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseRetrievalResult;
 
 /**
@@ -77,6 +78,12 @@ class RagQueryIntegrationTest {
 	static void requireDocker() {
 		Assumptions.assumeTrue(DockerClientFactory.instance().isDockerAvailable(),
 				"Docker is not available - skipping RAG query integration test");
+	}
+
+	@org.junit.jupiter.api.BeforeEach
+	void stubSuccessfulSync() {
+		given(kb.sync(any(), any())).willReturn(IngestionJobStatistics.builder()
+				.numberOfDocumentsScanned(1L).numberOfDocumentsFailed(0L).build());
 	}
 
 	private void drainIngestionQueue() {

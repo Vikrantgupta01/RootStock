@@ -1,6 +1,8 @@
 package com.rootstock.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -31,6 +33,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.DockerClientFactory;
+import software.amazon.awssdk.services.bedrockagent.model.IngestionJobStatistics;
 
 /**
  * End-to-end: upload -> ingest -> a Bedrock Knowledge Base sync is triggered and
@@ -65,6 +68,12 @@ class RagIngestionIntegrationTest {
 	static void requireDocker() {
 		Assumptions.assumeTrue(DockerClientFactory.instance().isDockerAvailable(),
 				"Docker is not available - skipping RAG ingestion integration test");
+	}
+
+	@org.junit.jupiter.api.BeforeEach
+	void stubSuccessfulSync() {
+		given(kb.sync(any(), any())).willReturn(IngestionJobStatistics.builder()
+				.numberOfDocumentsScanned(1L).numberOfDocumentsFailed(0L).build());
 	}
 
 	private void drainIngestionQueue() {

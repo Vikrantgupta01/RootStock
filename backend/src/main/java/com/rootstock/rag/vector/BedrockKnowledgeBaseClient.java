@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.bedrockagent.BedrockAgentClient;
 import software.amazon.awssdk.services.bedrockagent.model.ConflictException;
 import software.amazon.awssdk.services.bedrockagent.model.IngestionJobSortByAttribute;
+import software.amazon.awssdk.services.bedrockagent.model.IngestionJobStatistics;
 import software.amazon.awssdk.services.bedrockagent.model.IngestionJobStatus;
 import software.amazon.awssdk.services.bedrockagent.model.IngestionJobSummary;
 import software.amazon.awssdk.services.bedrockagent.model.SortOrder;
@@ -44,11 +45,14 @@ public class BedrockKnowledgeBaseClient {
 	/**
 	 * Triggers a data-source sync and waits (bounded) for it to finish. Throws if
 	 * the job fails, is stopped, or does not complete within the poll window --
-	 * the caller's retry ledger is expected to call this again later.
+	 * the caller's retry ledger is expected to call this again later. Returns the
+	 * completed job's statistics so the caller can tell a sync that genuinely
+	 * touched nothing (a misconfigured data source, or content that never reached
+	 * S3) apart from one that actually processed a document.
 	 */
-	public void sync(String knowledgeBaseId, String dataSourceId) {
+	public IngestionJobStatistics sync(String knowledgeBaseId, String dataSourceId) {
 		String jobId = startOrJoinInFlight(knowledgeBaseId, dataSourceId);
-		awaitCompletion(knowledgeBaseId, dataSourceId, jobId);
+		return awaitCompletion(knowledgeBaseId, dataSourceId, jobId);
 	}
 
 	public List<KnowledgeBaseRetrievalResult> retrieve(String knowledgeBaseId, String queryText, int numberOfResults,
@@ -91,18 +95,19 @@ public class BedrockKnowledgeBaseClient {
 		return summary.status() == IngestionJobStatus.STARTING || summary.status() == IngestionJobStatus.IN_PROGRESS;
 	}
 
-	private void awaitCompletion(String knowledgeBaseId, String dataSourceId, String ingestionJobId) {
+	private IngestionJobStatistics awaitCompletion(String knowledgeBaseId, String dataSourceId,
+			String ingestionJobId) {
 		for (int attempt = 0; attempt < MAX_POLLS; attempt++) {
-			IngestionJobStatus status = agent.getIngestionJob(r -> r
+			var job = agent.getIngestionJob(r -> r
 							.knowledgeBaseId(knowledgeBaseId).dataSourceId(dataSourceId).ingestionJobId(ingestionJobId))
-					.ingestionJob().status();
-			if (status == IngestionJobStatus.COMPLETE) {
-				return;
+					.ingestionJob();
+			if (job.status() == IngestionJobStatus.COMPLETE) {
+				return job.statistics();
 			}
-			if (status == IngestionJobStatus.FAILED || status == IngestionJobStatus.STOPPED) {
+			if (job.status() == IngestionJobStatus.FAILED || job.status() == IngestionJobStatus.STOPPED) {
 				throw new IllegalStateException(
 						"Bedrock ingestion job " + ingestionJobId + " on data source " + dataSourceId
-								+ " ended with status " + status);
+								+ " ended with status " + job.status());
 			}
 			sleep();
 		}
