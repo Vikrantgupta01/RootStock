@@ -114,7 +114,7 @@ class RagQueryIntegrationTest {
 						RagChunkMetadata.DOCUMENT_ID, Document.fromString(documentId.toString()),
 						RagChunkMetadata.DOCUMENT_VERSION_ID, Document.fromString(versionId.toString())))
 				.build();
-		given(kb.retrieve(eq("test-kb"), any(), anyInt(), any())).willReturn(List.of(hit));
+		given(kb.retrieve(eq("test-kb"), any(), anyInt(), any(), any())).willReturn(List.of(hit));
 
 		String json = mockMvc.perform(post("/api/rag/query")
 						.header("X-Tenant-Id", tenant)

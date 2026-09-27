@@ -78,8 +78,9 @@ public class RagQueryService {
 
 		RetrievalFilter filter = KnowledgeBaseFilters.retrieval(tenantId,
 				usedVersionIds.stream().map(UUID::toString).toList());
+		String rerankerModelArn = rerankerModelArn(profile);
 		List<KnowledgeBaseRetrievalResult> hits = kb.retrieve(
-				properties.bedrock().knowledgeBaseId(), request.question(), topK, filter).stream()
+				properties.bedrock().knowledgeBaseId(), request.question(), topK, filter, rerankerModelArn).stream()
 				.filter(h -> h.score() == null || h.score() >= threshold)
 				.toList();
 		if (hits.isEmpty()) {
@@ -95,6 +96,13 @@ public class RagQueryService {
 
 		return new RagQueryResponse(answer, true, citations, profile.getId(), profile.getName(),
 				profile.getVersionNo(), usedVersionIds);
+	}
+
+	private String rerankerModelArn(RagProfile profile) {
+		if (!profile.isRerankerEnabled() || profile.getRerankerModel() == null) {
+			return null;
+		}
+		return "arn:aws:bedrock:" + properties.bedrock().region() + "::foundation-model/" + profile.getRerankerModel();
 	}
 
 	private RagQueryResponse ungrounded(RagProfile profile, List<UUID> usedVersionIds, String answer) {

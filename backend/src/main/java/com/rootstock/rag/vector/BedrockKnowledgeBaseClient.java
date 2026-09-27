@@ -15,6 +15,7 @@ import software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeCl
 import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseRetrievalResult;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrievalFilter;
 import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveResponse;
+import software.amazon.awssdk.services.bedrockagentruntime.model.VectorSearchRerankingConfigurationType;
 
 /**
  * Wraps the two Bedrock Knowledge Base API surfaces this app needs: the control
@@ -55,14 +56,26 @@ public class BedrockKnowledgeBaseClient {
 		return awaitCompletion(knowledgeBaseId, dataSourceId, jobId);
 	}
 
+	/**
+	 * @param rerankerModelArn when non-null, re-scores the {@code numberOfResults}
+	 *                         hits with this Bedrock reranking model (e.g.
+	 *                         {@code arn:aws:bedrock:*::foundation-model/cohere.rerank-v3-5:0});
+	 *                         null skips reranking entirely.
+	 */
 	public List<KnowledgeBaseRetrievalResult> retrieve(String knowledgeBaseId, String queryText, int numberOfResults,
-			RetrievalFilter filter) {
+			RetrievalFilter filter, String rerankerModelArn) {
 		RetrieveResponse response = agentRuntime.retrieve(r -> r
 				.knowledgeBaseId(knowledgeBaseId)
 				.retrievalQuery(q -> q.text(queryText))
-				.retrievalConfiguration(rc -> rc.vectorSearchConfiguration(vs -> vs
-						.numberOfResults(numberOfResults)
-						.filter(filter))));
+				.retrievalConfiguration(rc -> rc.vectorSearchConfiguration(vs -> {
+					vs.numberOfResults(numberOfResults).filter(filter);
+					if (rerankerModelArn != null) {
+						vs.rerankingConfiguration(rk -> rk
+								.type(VectorSearchRerankingConfigurationType.BEDROCK_RERANKING_MODEL)
+								.bedrockRerankingConfiguration(brc -> brc
+										.modelConfiguration(mc -> mc.modelArn(rerankerModelArn))));
+					}
+				})));
 		return response.retrievalResults();
 	}
 
