@@ -36,8 +36,12 @@ spring:
         chat:
           options:
             # Override with a model / inference-profile id your AWS account has
-            # been granted access to in the target region.
-            model: ${BEDROCK_MODEL:us.anthropic.claude-sonnet-4-20250514-v1:0}
+            # been granted access to in the target region. claude-sonnet-4
+            # (the prior default) was marked LEGACY by the provider;
+            # claude-sonnet-5 is newer but gated behind an AWS Sales
+            # entitlement this account doesn't have yet -- claude-sonnet-4-5
+            # is active and actually invokable as of 2026-09.
+            model: ${BEDROCK_MODEL:us.anthropic.claude-sonnet-4-5-20250929-v1:0}
             temperature: 0.7
 
 management:
@@ -70,12 +74,14 @@ rootstock:
       header: X-Tenant-Id
       default-tenant: default
     blob:
-      # filesystem (default, no infra) or s3 (real AWS, or MinIO/LocalStack via endpoint)
-      backend: ${RAG_BLOB_BACKEND:filesystem}
+      # filesystem (no infra) or s3 (default -- real AWS, or MinIO/LocalStack via
+      # endpoint). Bedrock Knowledge Base ingestion requires real S3, so this app
+      # defaults to it; override to filesystem for offline/no-AWS local dev.
+      backend: ${RAG_BLOB_BACKEND:s3}
       filesystem:
         dir: ${RAG_BLOB_DIR:./data/blobs}
       s3:
-        bucket: ${RAG_S3_BUCKET:rootstock-rag}
+        bucket: ${RAG_S3_BUCKET:rootstock.rag.blob.s3.bucket}
         endpoint: ${RAG_S3_ENDPOINT:}
         region: ${AWS_REGION:us-east-1}
         path-style-access: true
