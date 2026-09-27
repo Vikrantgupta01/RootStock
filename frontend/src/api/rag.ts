@@ -8,8 +8,6 @@ import { getTenant } from './tenant'
 export type DocumentStatus = 'PENDING' | 'PROCESSING' | 'INDEXED' | 'FAILED' | 'SUPERSEDED'
 export type JobKind = 'INGEST' | 'REINDEX' | 'CLEANUP'
 export type JobState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
-export type ChunkingStrategy = 'CHARACTER' | 'TOKEN' | 'SEMANTIC'
-export type ActivationState = 'PENDING' | 'COMPLETED' | 'FAILED'
 
 export interface Page<T> {
   content: T[]
@@ -76,10 +74,6 @@ export interface RagProfile {
   name: string
   versionNo: number
   active: boolean
-  chunkingStrategy: ChunkingStrategy
-  chunkSize: number
-  chunkOverlap: number
-  embeddingModelId: string
   chatModelId: string | null
   topK: number
   similarityThreshold: number
@@ -87,16 +81,11 @@ export interface RagProfile {
   rerankerModel: string | null
   maxContextTokens: number
   promptTemplate: string
-  hybridSearch: boolean
   fineTunedModelArn: string | null
   createdAt: string
 }
 
 export interface ProfileUpdate {
-  chunkingStrategy?: ChunkingStrategy
-  chunkSize?: number
-  chunkOverlap?: number
-  embeddingModelId?: string
   chatModelId?: string | null
   topK?: number
   similarityThreshold?: number
@@ -104,23 +93,10 @@ export interface ProfileUpdate {
   rerankerModel?: string | null
   maxContextTokens?: number
   promptTemplate?: string
-  hybridSearch?: boolean
 }
 
 export interface ProfileCreate extends ProfileUpdate {
   name: string
-}
-
-export interface Activation {
-  activationId: string | null
-  targetProfileId: string
-  previousProfileId: string | null
-  reindexRequired: boolean
-  totalReindexJobs: number
-  state: ActivationState
-  errorMessage: string | null
-  createdAt: string
-  completedAt: string | null
 }
 
 export interface Citation {
@@ -250,9 +226,7 @@ export const rag = {
     update: (id: string, body: ProfileUpdate) =>
       request<RagProfile>(`/api/rag/profiles/${id}/versions`, { method: 'POST', body: JSON.stringify(body) }, t),
     activate: (id: string) =>
-      request<Activation>(`/api/rag/profiles/${id}/activate`, { method: 'POST' }, t),
-    activation: (activationId: string) =>
-      request<Activation>(`/api/rag/profiles/activations/${activationId}`, {}, t),
+      request<RagProfile>(`/api/rag/profiles/${id}/activate`, { method: 'POST' }, t),
   },
 
   query: (body: QueryRequest) =>

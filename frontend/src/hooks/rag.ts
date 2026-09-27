@@ -2,12 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ApiError } from '../api/http'
 import {
   rag,
-  type Activation,
   type JobState,
   type ProfileCreate,
   type ProfileUpdate,
   type QueryRequest,
   type RagAnswer,
+  type RagProfile,
 } from '../api/rag'
 import { useTenant } from './useTenant'
 
@@ -56,16 +56,6 @@ export function useProfileVersions(id: string | null) {
     queryKey: ['rag', tenant, 'profile-versions', id],
     queryFn: () => rag.profiles.versions(id as string),
     enabled: !!id,
-  })
-}
-
-export function useActivation(activationId: string | null) {
-  const tenant = useTenant()
-  return useQuery({
-    queryKey: ['rag', tenant, 'activation', activationId],
-    queryFn: () => rag.profiles.activation(activationId as string),
-    enabled: !!activationId,
-    refetchInterval: (query) => (query.state.data?.state === 'PENDING' ? 2000 : false),
   })
 }
 
@@ -147,7 +137,7 @@ export function useUpdateProfile() {
 
 export function useActivateProfile() {
   const invalidate = useRagInvalidator()
-  return useMutation<Activation, ApiError, string>({
+  return useMutation<RagProfile, ApiError, string>({
     mutationFn: (id) => rag.profiles.activate(id),
     onSuccess: invalidate,
   })
