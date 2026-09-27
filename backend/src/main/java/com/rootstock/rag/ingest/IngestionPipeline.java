@@ -1,36 +1,27 @@
 package com.rootstock.rag.ingest;
 
+import com.rootstock.rag.RagProperties;
 import com.rootstock.rag.document.DocumentStatus;
 import com.rootstock.rag.document.DocumentVersion;
 import com.rootstock.rag.document.DocumentVersionRepository;
-import com.rootstock.rag.profile.RagProfile;
-import com.rootstock.rag.profile.RagProfileRepository;
-import com.rootstock.rag.profile.RagProfileService;
-import com.rootstock.rag.vector.RagChunkMetadata;
-import com.rootstock.rag.vector.RagFilters;
-import com.rootstock.rag.vector.VectorStoreRegistry;
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import com.rootstock.rag.vector.BedrockKnowledgeBaseClient;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.reader.tika.TikaDocumentReader;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
-import com.rootstock.rag.blob.BlobStore;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The transactional body of one ingestion job: parse → chunk → embed → write to
- * the vector store, then flip the {@link DocumentVersion} to {@code INDEXED}.
- * Runs inside a single transaction; any exception rolls the whole thing back and
- * the caller records the failure separately.
+ * Runs one ingestion job: trigger (and wait for) a Bedrock Knowledge Base
+ * data-source sync, then flip the {@link DocumentVersion} to {@code INDEXED}.
+ *
+ * <p>Parsing, chunking, and embedding are owned by Bedrock -- this class only
+ * has to make sure the S3 object + metadata sidecar (written by
+ * {@link com.rootstock.rag.document.DocumentService}) are picked up by a sync.
+ * {@code INGEST} and {@code REINDEX} are handled identically; {@code CLEANUP}
+ * just re-syncs so a deletion Bedrock already saw (the S3 object was removed by
+ * {@code DocumentService} before this job was queued) takes effect.
  */
 @Service
 public class IngestionPipeline {
@@ -39,124 +30,35 @@ public class IngestionPipeline {
 
 	private final IngestionJobRepository jobs;
 	private final DocumentVersionRepository versions;
-	private final RagProfileRepository profiles;
-	private final RagProfileService profileService;
-	private final BlobStore blobStore;
-	private final VectorStoreRegistry vectorStores;
+	private final BedrockKnowledgeBaseClient kb;
+	private final RagProperties properties;
 
 	public IngestionPipeline(IngestionJobRepository jobs, DocumentVersionRepository versions,
-			RagProfileRepository profiles, RagProfileService profileService, BlobStore blobStore,
-			VectorStoreRegistry vectorStores) {
+			BedrockKnowledgeBaseClient kb, RagProperties properties) {
 		this.jobs = jobs;
 		this.versions = versions;
-		this.profiles = profiles;
-		this.profileService = profileService;
-		this.blobStore = blobStore;
-		this.vectorStores = vectorStores;
+		this.kb = kb;
+		this.properties = properties;
 	}
 
-	@Transactional
-	public void run(java.util.UUID jobId) {
+	public void run(UUID jobId) {
 		IngestionJob job = jobs.findById(jobId)
 				.orElseThrow(() -> new NoSuchElementException("Ingestion job " + jobId + " vanished"));
-		switch (job.getKind()) {
-			case INGEST, REINDEX -> index(job);
-			case CLEANUP -> cleanup(job);
-		}
-		job.setState(IngestionJobState.SUCCEEDED);
-		job.setErrorMessage(null);
-	}
 
-	private void index(IngestionJob job) {
-		DocumentVersion version = versions.findById(job.getDocumentVersionId())
-				.orElseThrow(() -> new NoSuchElementException("document_version " + job.getDocumentVersionId()));
+		kb.sync(properties.bedrock().knowledgeBaseId(), properties.bedrock().dataSourceId());
 
-		RagProfile profile = job.getProfileId() != null
-				? profiles.findById(job.getProfileId())
-						.orElseThrow(() -> new NoSuchElementException("rag_profile " + job.getProfileId()))
-				: profileService.activeProfile(version.getTenantId());
-
-		String embeddingModelId = profile.getEmbeddingModelId();
-		String chunkConfig = profile.chunkConfigKey();
-		VectorStore store = vectorStores.forModel(embeddingModelId);
-
-		// Idempotency: drop only chunks this exact (version, layout) previously wrote,
-		// so a re-index never disturbs the currently-active profile's chunks.
-		store.delete(RagFilters.forVersionAndChunkConfig(
-				version.getTenantId(), version.getId().toString(), embeddingModelId, chunkConfig));
-
-		String text = extractText(readBytes(version.getBlobKey()));
-		List<String> pieces = TextChunker.chunk(text, profile.getChunkingStrategy(),
-				profile.getChunkSize(), profile.getChunkOverlap());
-
-		List<org.springframework.ai.document.Document> chunks = new ArrayList<>(pieces.size());
-		for (int i = 0; i < pieces.size(); i++) {
-			Map<String, Object> metadata = new HashMap<>();
-			metadata.put(RagChunkMetadata.TENANT_ID, version.getTenantId());
-			metadata.put(RagChunkMetadata.DOCUMENT_ID, version.getDocumentId().toString());
-			metadata.put(RagChunkMetadata.DOCUMENT_VERSION_ID, version.getId().toString());
-			metadata.put(RagChunkMetadata.EMBEDDING_MODEL_ID, embeddingModelId);
-			metadata.put(RagChunkMetadata.CHUNK_CONFIG, chunkConfig);
-			metadata.put(RagChunkMetadata.CHUNK_INDEX, i);
-			chunks.add(new org.springframework.ai.document.Document(pieces.get(i), metadata));
-		}
-		if (!chunks.isEmpty()) {
-			store.add(chunks);
-		}
-
-		// Only the INGEST of the currently-active layout moves the version's own status.
-		if (job.getKind() == IngestionJobKind.INGEST || !profile.layoutDiffersFrom(
-				profileService.activeProfile(version.getTenantId()))) {
-			version.setChunkCount(chunks.size());
+		if (job.getKind() != IngestionJobKind.CLEANUP) {
+			DocumentVersion version = versions.findById(job.getDocumentVersionId())
+					.orElseThrow(() -> new NoSuchElementException("document_version " + job.getDocumentVersionId()));
 			version.setStatus(DocumentStatus.INDEXED);
 			version.setIndexedAt(Instant.now());
 			version.setErrorMessage(null);
 			versions.save(version);
+			log.info("Indexed document_version {} via Bedrock Knowledge Base sync", version.getId());
 		}
-		log.info("Indexed document_version {} ({} chunks) as {}/{}",
-				version.getId(), chunks.size(), embeddingModelId, chunkConfig);
-	}
 
-	private void cleanup(IngestionJob job) {
-		if (job.getProfileId() != null) {
-			// Blue/green tail: purge the superseded profile layout's chunks.
-			RagProfile superseded = profiles.findById(job.getProfileId())
-					.orElseThrow(() -> new NoSuchElementException("rag_profile " + job.getProfileId()));
-			vectorStores.forModel(superseded.getEmbeddingModelId())
-					.delete(RagFilters.forChunkConfig(superseded.getTenantId(),
-							superseded.getEmbeddingModelId(), superseded.chunkConfigKey()));
-			log.info("Cleaned up chunks for superseded profile layout {}/{}",
-					superseded.getEmbeddingModelId(), superseded.chunkConfigKey());
-			return;
-		}
-		DocumentVersion version = versions.findById(job.getDocumentVersionId())
-				.orElseThrow(() -> new NoSuchElementException("document_version " + job.getDocumentVersionId()));
-		RagProfile profile = profileService.activeProfile(version.getTenantId());
-		vectorStores.forModel(profile.getEmbeddingModelId())
-				.delete(RagFilters.forVersion(version.getTenantId(), version.getId().toString()));
-		version.setStatus(DocumentStatus.SUPERSEDED);
-		version.setChunkCount(0);
-		versions.save(version);
-	}
-
-	private byte[] readBytes(String blobKey) {
-		try (var in = blobStore.get(blobKey)) {
-			return in.readAllBytes();
-		}
-		catch (IOException e) {
-			throw new UncheckedIOException("Failed to read blob " + blobKey, e);
-		}
-	}
-
-	private String extractText(byte[] bytes) {
-		List<org.springframework.ai.document.Document> parsed =
-				new TikaDocumentReader(new ByteArrayResource(bytes)).get();
-		StringBuilder sb = new StringBuilder();
-		for (org.springframework.ai.document.Document d : parsed) {
-			if (d.getText() != null) {
-				sb.append(d.getText()).append("\n\n");
-			}
-		}
-		return sb.toString();
+		job.setState(IngestionJobState.SUCCEEDED);
+		job.setErrorMessage(null);
+		jobs.save(job);
 	}
 }

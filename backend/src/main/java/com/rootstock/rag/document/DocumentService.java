@@ -11,13 +11,13 @@ import com.rootstock.rag.document.dto.UploadResponse;
 import com.rootstock.rag.ingest.IngestionJob;
 import com.rootstock.rag.ingest.IngestionJobKind;
 import com.rootstock.rag.ingest.IngestionJobRepository;
-import com.rootstock.rag.profile.RagProfileService;
 import com.rootstock.rag.tenant.TenantContext;
-import com.rootstock.rag.vector.RagFilters;
-import com.rootstock.rag.vector.VectorStoreRegistry;
+import com.rootstock.rag.vector.RagChunkMetadata;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -47,20 +47,15 @@ public class DocumentService {
 	private final DocumentRepository documents;
 	private final DocumentVersionRepository versions;
 	private final IngestionJobRepository jobs;
-	private final RagProfileService profiles;
 	private final BlobStore blobStore;
-	private final VectorStoreRegistry vectorStores;
 	private final RagProperties properties;
 
 	public DocumentService(DocumentRepository documents, DocumentVersionRepository versions,
-			IngestionJobRepository jobs, RagProfileService profiles, BlobStore blobStore,
-			VectorStoreRegistry vectorStores, RagProperties properties) {
+			IngestionJobRepository jobs, BlobStore blobStore, RagProperties properties) {
 		this.documents = documents;
 		this.versions = versions;
 		this.jobs = jobs;
-		this.profiles = profiles;
 		this.blobStore = blobStore;
-		this.vectorStores = vectorStores;
 		this.properties = properties;
 	}
 
@@ -130,9 +125,9 @@ public class DocumentService {
 		DocumentVersion version = versions.save(new DocumentVersion(
 				document.getId(), document.getTenantId(), nextVersionNo, blobKey, hash, bytes.length));
 
-		UUID profileId = profiles.activeProfile(document.getTenantId()).getId();
+		putKnowledgeBaseCopy(document.getTenantId(), document.getId(), version.getId(), bytes, contentType);
 		jobs.save(new IngestionJob(document.getTenantId(), IngestionJobKind.INGEST,
-				version.getId(), profileId, properties.ingest().maxAttempts()));
+				version.getId(), null, properties.ingest().maxAttempts()));
 		return version;
 	}
 
@@ -150,9 +145,10 @@ public class DocumentService {
 	public DocumentVersionResponse reindexVersion(UUID documentId, int versionNo) {
 		Document document = requireDocument(documentId);
 		DocumentVersion version = requireVersion(document.getId(), versionNo);
-		UUID profileId = profiles.activeProfile(document.getTenantId()).getId();
+		putKnowledgeBaseCopy(document.getTenantId(), document.getId(), version.getId(),
+				readBytes(version.getBlobKey()), document.getContentType());
 		jobs.save(new IngestionJob(document.getTenantId(), IngestionJobKind.REINDEX,
-				version.getId(), profileId, properties.ingest().maxAttempts()));
+				version.getId(), null, properties.ingest().maxAttempts()));
 		version.setStatus(DocumentStatus.PENDING);
 		version.setErrorMessage(null);
 		return DocumentVersionResponse.of(version, document.getActiveVersionId());
@@ -162,7 +158,7 @@ public class DocumentService {
 	public void deleteVersion(UUID documentId, int versionNo) {
 		Document document = requireDocument(documentId);
 		DocumentVersion version = requireVersion(document.getId(), versionNo);
-		purgeChunks(document.getTenantId(), version.getId());
+		purgeKnowledgeBaseCopy(document.getTenantId(), document.getId(), version.getId());
 		if (version.getId().equals(document.getActiveVersionId())) {
 			document.setActiveVersionId(null);
 		}
@@ -173,16 +169,51 @@ public class DocumentService {
 	public void deleteDocument(UUID documentId) {
 		Document document = requireDocument(documentId);
 		for (DocumentVersion version : versions.findByDocumentIdOrderByVersionNoDesc(document.getId())) {
-			purgeChunks(document.getTenantId(), version.getId());
+			purgeKnowledgeBaseCopy(document.getTenantId(), document.getId(), version.getId());
 		}
 		document.setActiveVersionId(null);
 		documents.delete(document); // document_version rows cascade in the DB
 	}
 
-	private void purgeChunks(String tenantId, UUID versionId) {
-		String embeddingModelId = profiles.activeProfile(tenantId).getEmbeddingModelId();
-		vectorStores.forModel(embeddingModelId)
-				.delete(RagFilters.forVersion(tenantId, versionId.toString()));
+	/**
+	 * Writes the S3 object + {@code .metadata.json} sidecar Bedrock's data source
+	 * ingests, under a key scoped to this exact version -- kept separate from the
+	 * content-addressed {@code blobKey} so two versions (or tenants) that happen to
+	 * share identical bytes never share a Bedrock-side document or its metadata.
+	 */
+	private void putKnowledgeBaseCopy(String tenantId, UUID documentId, UUID versionId, byte[] bytes,
+			String contentType) {
+		String key = knowledgeBaseObjectKey(tenantId, documentId, versionId);
+		blobStore.put(key, bytes, contentType);
+		blobStore.put(key + ".metadata.json", metadataSidecar(tenantId, documentId, versionId), "application/json");
+	}
+
+	private void purgeKnowledgeBaseCopy(String tenantId, UUID documentId, UUID versionId) {
+		String key = knowledgeBaseObjectKey(tenantId, documentId, versionId);
+		blobStore.delete(key);
+		blobStore.delete(key + ".metadata.json");
+		// No documentVersionId: the version row (and, via its FK cascade, any job
+		// referencing it) is about to be deleted by the caller. CLEANUP jobs don't
+		// need it anyway -- IngestionPipeline only uses one to trigger a sync.
+		jobs.save(new IngestionJob(tenantId, IngestionJobKind.CLEANUP, null, null,
+				properties.ingest().maxAttempts()));
+	}
+
+	private static String knowledgeBaseObjectKey(String tenantId, UUID documentId, UUID versionId) {
+		return "rag-kb/" + tenantId + "/" + documentId + "/" + versionId;
+	}
+
+	private static byte[] metadataSidecar(String tenantId, UUID documentId, UUID versionId) {
+		String json = """
+				{"metadataAttributes":{"%s":"%s","%s":"%s","%s":"%s"}}""".formatted(
+				RagChunkMetadata.TENANT_ID, escape(tenantId),
+				RagChunkMetadata.DOCUMENT_ID, documentId,
+				RagChunkMetadata.DOCUMENT_VERSION_ID, versionId);
+		return json.getBytes(StandardCharsets.UTF_8);
+	}
+
+	private static String escape(String value) {
+		return value.replace("\\", "\\\\").replace("\"", "\\\"");
 	}
 
 	// ---- download ---------------------------------------------------------- -
@@ -242,6 +273,15 @@ public class DocumentService {
 		if (!ALLOWED_CONTENT_TYPES.contains(base)) {
 			throw new UnsupportedContentTypeException("Unsupported content type: " + contentType
 					+ ". Allowed: " + ALLOWED_CONTENT_TYPES);
+		}
+	}
+
+	private byte[] readBytes(String blobKey) {
+		try (var in = blobStore.get(blobKey)) {
+			return in.readAllBytes();
+		}
+		catch (IOException e) {
+			throw new UncheckedIOException("Failed to read blob " + blobKey, e);
 		}
 	}
 

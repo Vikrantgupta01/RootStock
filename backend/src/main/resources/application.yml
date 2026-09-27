@@ -2,14 +2,6 @@ spring:
   application:
     name: rootstock
 
-  autoconfigure:
-    # RootStock builds its EmbeddingModel(s) and PgVectorStore(s) programmatically
-    # (see com.rootstock.rag.vector) so several embedding models can coexist, one
-    # physical table per dimension. Spring AI's single-store auto-configuration
-    # would clash, so it stays excluded.
-    exclude:
-      - org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration
-
   servlet:
     multipart:
       max-file-size: 25MB
@@ -34,8 +26,8 @@ spring:
       # Chat is served by AWS Bedrock (Converse API). Requires AWS credentials with
       # Bedrock model access on the runtime (default AWS provider chain).
       chat: bedrock-converse
-      # RAG embeddings are managed by com.rootstock.rag.vector.EmbeddingModelRegistry,
-      # not Spring AI auto-configuration -- keep this off.
+      # RAG embeddings happen inside the Bedrock Knowledge Base (see rootstock.rag.bedrock),
+      # invisible to this app -- no EmbeddingModel bean is needed here.
       embedding: none
     bedrock:
       aws:
@@ -90,25 +82,15 @@ rootstock:
       presign-ttl: 15m
     bedrock:
       # AWS Bedrock Knowledge Base (Aurora PostgreSQL Serverless v2 vector store)
-      # backing RAG retrieval/ingestion. Replaces the pgvector-based pipeline below
-      # once the Phase 4 cutover lands -- see the migration plan.
-      knowledge-base-id: ${RAG_BEDROCK_KB_ID:}
-      data-source-id: ${RAG_BEDROCK_DATA_SOURCE_ID:}
-      region: ${AWS_REGION:us-east-1}
-    embedding:
-      # fake (offline, deterministic) or bedrock (Titan Text Embeddings v2)
-      mode: ${RAG_EMBEDDING_MODE:fake}
-      fake-dimensions: 1024
+      # backing RAG ingestion and retrieval -- owns parsing, chunking, and embedding.
+      knowledge-base-id: ${RAG_BEDROCK_KB_ID:HX3QBBNC0M}
+      data-source-id: ${RAG_BEDROCK_DATA_SOURCE_ID:JFDCCZVP11}
       region: ${AWS_REGION:us-east-1}
     ingest:
       poll-interval-ms: 5000
       batch-size: 5
       max-attempts: 3
     defaults:
-      chunking-strategy: CHARACTER
-      chunk-size: 1200
-      chunk-overlap: 150
-      embedding-model-id: ${RAG_EMBEDDING_MODEL:fake}
       top-k: 4
       similarity-threshold: 0.5
       max-context-tokens: 4000

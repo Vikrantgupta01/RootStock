@@ -1,11 +1,8 @@
 package com.rootstock.rag.profile;
 
-import com.rootstock.rag.ingest.ChunkingStrategy;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -44,19 +41,6 @@ public class RagProfile {
 	@Column(nullable = false)
 	private boolean active;
 
-	@Enumerated(EnumType.STRING)
-	@Column(name = "chunking_strategy", nullable = false, length = 32, updatable = false)
-	private ChunkingStrategy chunkingStrategy;
-
-	@Column(name = "chunk_size", nullable = false, updatable = false)
-	private int chunkSize;
-
-	@Column(name = "chunk_overlap", nullable = false, updatable = false)
-	private int chunkOverlap;
-
-	@Column(name = "embedding_model_id", nullable = false, length = 64, updatable = false)
-	private String embeddingModelId;
-
 	@Column(name = "chat_model_id", length = 256, updatable = false)
 	private String chatModelId;
 
@@ -78,9 +62,6 @@ public class RagProfile {
 	@JdbcTypeCode(SqlTypes.LONGVARCHAR)
 	@Column(name = "prompt_template", nullable = false)
 	private String promptTemplate;
-
-	@Column(name = "hybrid_search", nullable = false)
-	private boolean hybridSearch;
 
 	@Column(name = "fine_tuned_model_arn", length = 512, updatable = false)
 	private String fineTunedModelArn;
@@ -119,22 +100,6 @@ public class RagProfile {
 		this.active = active;
 	}
 
-	public ChunkingStrategy getChunkingStrategy() {
-		return chunkingStrategy;
-	}
-
-	public int getChunkSize() {
-		return chunkSize;
-	}
-
-	public int getChunkOverlap() {
-		return chunkOverlap;
-	}
-
-	public String getEmbeddingModelId() {
-		return embeddingModelId;
-	}
-
 	public String getChatModelId() {
 		return chatModelId;
 	}
@@ -163,28 +128,8 @@ public class RagProfile {
 		return promptTemplate;
 	}
 
-	public boolean isHybridSearch() {
-		return hybridSearch;
-	}
-
 	public String getFineTunedModelArn() {
 		return fineTunedModelArn;
-	}
-
-	/**
-	 * Identifies the physical chunk layout this profile expects, tagged onto every
-	 * chunk. Two profile versions with the same key share chunks; a different key
-	 * means a re-index is required to switch.
-	 */
-	public String chunkConfigKey() {
-		return chunkingStrategy + ":" + chunkSize + ":" + chunkOverlap;
-	}
-
-	/** Whether switching from {@code other} to this profile needs a re-index. */
-	public boolean layoutDiffersFrom(RagProfile other) {
-		return other == null
-				|| !embeddingModelId.equals(other.embeddingModelId)
-				|| !chunkConfigKey().equals(other.chunkConfigKey());
 	}
 
 	public Instant getCreatedAt() {
@@ -208,14 +153,6 @@ public class RagProfile {
 
 		public Builder active(boolean v) { p.active = v; return this; }
 
-		public Builder chunkingStrategy(ChunkingStrategy v) { p.chunkingStrategy = v; return this; }
-
-		public Builder chunkSize(int v) { p.chunkSize = v; return this; }
-
-		public Builder chunkOverlap(int v) { p.chunkOverlap = v; return this; }
-
-		public Builder embeddingModelId(String v) { p.embeddingModelId = v; return this; }
-
 		public Builder chatModelId(String v) { p.chatModelId = v; return this; }
 
 		public Builder topK(int v) { p.topK = v; return this; }
@@ -229,8 +166,6 @@ public class RagProfile {
 		public Builder maxContextTokens(int v) { p.maxContextTokens = v; return this; }
 
 		public Builder promptTemplate(String v) { p.promptTemplate = v; return this; }
-
-		public Builder hybridSearch(boolean v) { p.hybridSearch = v; return this; }
 
 		public Builder fineTunedModelArn(String v) { p.fineTunedModelArn = v; return this; }
 

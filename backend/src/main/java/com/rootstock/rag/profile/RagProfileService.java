@@ -3,17 +3,9 @@ package com.rootstock.rag.profile;
 import com.rootstock.common.DuplicateResourceException;
 import com.rootstock.common.ResourceNotFoundException;
 import com.rootstock.rag.RagProperties;
-import com.rootstock.rag.document.ActiveVersionResolver;
-import com.rootstock.rag.document.DocumentVersion;
-import com.rootstock.rag.ingest.ChunkingStrategy;
-import com.rootstock.rag.ingest.IngestionJob;
-import com.rootstock.rag.ingest.IngestionJobKind;
-import com.rootstock.rag.ingest.IngestionJobRepository;
-import com.rootstock.rag.profile.dto.ActivationResponse;
 import com.rootstock.rag.profile.dto.CreateRagProfileRequest;
 import com.rootstock.rag.profile.dto.UpdateRagProfileRequest;
 import com.rootstock.rag.tenant.TenantContext;
-import com.rootstock.rag.vector.EmbeddingModelRegistry;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,27 +17,19 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Manages a tenant's RAG profiles: seeding a {@code default}, creating named
- * profiles, versioning edits, and blue/green activation (see
- * {@link ProfileActivationMonitor}).
+ * profiles, versioning edits, and activation. Profiles hold only query-time
+ * knobs (top-k, similarity threshold, chat model, prompt template, reranker) --
+ * ingestion, chunking, and embedding are owned by the Bedrock Knowledge Base, so
+ * switching the active profile is always an immediate pointer flip.
  */
 @Service
 public class RagProfileService {
 
 	private final RagProfileRepository profiles;
-	private final RagProfileActivationRepository activations;
-	private final IngestionJobRepository jobs;
-	private final ActiveVersionResolver activeVersions;
-	private final EmbeddingModelRegistry embeddingModels;
 	private final RagProperties properties;
 
-	public RagProfileService(RagProfileRepository profiles, RagProfileActivationRepository activations,
-			IngestionJobRepository jobs, ActiveVersionResolver activeVersions,
-			EmbeddingModelRegistry embeddingModels, RagProperties properties) {
+	public RagProfileService(RagProfileRepository profiles, RagProperties properties) {
 		this.profiles = profiles;
-		this.activations = activations;
-		this.jobs = jobs;
-		this.activeVersions = activeVersions;
-		this.embeddingModels = embeddingModels;
 		this.properties = properties;
 	}
 
@@ -97,18 +81,11 @@ public class RagProfileService {
 			throw new DuplicateResourceException("A profile named '" + request.name() + "' already exists.");
 		}
 		RagProperties.Defaults d = properties.defaults();
-		String embeddingModelId = orElse(request.embeddingModelId(), d.embeddingModelId());
-		requireKnownEmbeddingModel(embeddingModelId);
-
 		RagProfile profile = new RagProfile.Builder()
 				.tenantId(tenantId)
 				.name(request.name().trim())
 				.versionNo(1)
 				.active(false)
-				.chunkingStrategy(orElse(request.chunkingStrategy(), ChunkingStrategy.valueOf(d.chunkingStrategy())))
-				.chunkSize(orElse(request.chunkSize(), d.chunkSize()))
-				.chunkOverlap(orElse(request.chunkOverlap(), d.chunkOverlap()))
-				.embeddingModelId(embeddingModelId)
 				.chatModelId(request.chatModelId())
 				.topK(orElse(request.topK(), d.topK()))
 				.similarityThreshold(orElse(request.similarityThreshold(), d.similarityThreshold()))
@@ -116,7 +93,6 @@ public class RagProfileService {
 				.rerankerModel(request.rerankerModel())
 				.maxContextTokens(orElse(request.maxContextTokens(), d.maxContextTokens()))
 				.promptTemplate(orElse(request.promptTemplate(), d.promptTemplate()))
-				.hybridSearch(Boolean.TRUE.equals(request.hybridSearch()))
 				.createdBy(tenantId)
 				.build();
 		return profiles.save(profile);
@@ -125,9 +101,6 @@ public class RagProfileService {
 	@Transactional
 	public RagProfile update(UUID id, UpdateRagProfileRequest request) {
 		RagProfile source = requireProfile(id);
-		String embeddingModelId = orElse(request.embeddingModelId(), source.getEmbeddingModelId());
-		requireKnownEmbeddingModel(embeddingModelId);
-
 		int nextVersion = profiles
 				.findFirstByTenantIdAndNameOrderByVersionNoDesc(source.getTenantId(), source.getName())
 				.map(RagProfile::getVersionNo).orElse(0) + 1;
@@ -137,10 +110,6 @@ public class RagProfileService {
 				.name(source.getName())
 				.versionNo(nextVersion)
 				.active(false)
-				.chunkingStrategy(orElse(request.chunkingStrategy(), source.getChunkingStrategy()))
-				.chunkSize(orElse(request.chunkSize(), source.getChunkSize()))
-				.chunkOverlap(orElse(request.chunkOverlap(), source.getChunkOverlap()))
-				.embeddingModelId(embeddingModelId)
 				.chatModelId(orElse(request.chatModelId(), source.getChatModelId()))
 				.topK(orElse(request.topK(), source.getTopK()))
 				.similarityThreshold(orElse(request.similarityThreshold(), source.getSimilarityThreshold()))
@@ -148,47 +117,21 @@ public class RagProfileService {
 				.rerankerModel(orElse(request.rerankerModel(), source.getRerankerModel()))
 				.maxContextTokens(orElse(request.maxContextTokens(), source.getMaxContextTokens()))
 				.promptTemplate(orElse(request.promptTemplate(), source.getPromptTemplate()))
-				.hybridSearch(orElse(request.hybridSearch(), source.isHybridSearch()))
 				.createdBy(source.getTenantId())
 				.build();
 		return profiles.save(next);
 	}
 
+	/** Flips the active pointer to {@code id}. Always immediate -- no re-index to wait for. */
 	@Transactional
-	public ActivationResponse activate(UUID id) {
+	public RagProfile activate(UUID id) {
 		String tenantId = TenantContext.require();
 		RagProfile target = requireProfile(id);
 		RagProfile current = profiles.findByTenantIdAndActiveTrue(tenantId).orElse(null);
-
-		if (current != null && current.getId().equals(target.getId())) {
-			return ActivationResponse.immediate(target.getId(), current.getId());
-		}
-		activations.findByTenantIdAndState(tenantId, RagProfileActivation.State.PENDING).ifPresent(a -> {
-			throw new DuplicateResourceException("A profile activation is already in progress for this tenant.");
-		});
-
-		if (!target.layoutDiffersFrom(current)) {
-			// Query-time-only change: the existing chunks already match the new
-			// layout, so flip the pointer immediately.
+		if (current == null || !current.getId().equals(target.getId())) {
 			switchActive(current, target);
-			return ActivationResponse.immediate(target.getId(), current != null ? current.getId() : null);
 		}
-
-		List<DocumentVersion> toReindex = activeVersions.activeIndexed(tenantId);
-		for (DocumentVersion v : toReindex) {
-			jobs.save(new IngestionJob(tenantId, IngestionJobKind.REINDEX, v.getId(), target.getId(),
-					properties.ingest().maxAttempts()));
-		}
-		RagProfileActivation activation = activations.save(new RagProfileActivation(
-				tenantId, target.getId(), current != null ? current.getId() : null, toReindex.size()));
-
-		if (toReindex.isEmpty()) {
-			// Nothing indexed yet -- switch right away.
-			switchActive(current, target);
-			activation.setState(RagProfileActivation.State.COMPLETED);
-			activation.setCompletedAt(java.time.Instant.now());
-		}
-		return ActivationResponse.of(activation);
+		return target;
 	}
 
 	/**
@@ -207,55 +150,6 @@ public class RagProfileService {
 		}
 	}
 
-	/**
-	 * Completes any blue/green activation whose re-index jobs have all finished:
-	 * flips the active pointer on success (and queues a cleanup of the old
-	 * layout's chunks), or marks the activation failed. Driven by
-	 * {@link ProfileActivationMonitor}.
-	 */
-	@Transactional
-	public void finalizePendingActivations() {
-		var terminalStates = List.of(
-				com.rootstock.rag.ingest.IngestionJobState.SUCCEEDED,
-				com.rootstock.rag.ingest.IngestionJobState.FAILED);
-		var failedState = List.of(com.rootstock.rag.ingest.IngestionJobState.FAILED);
-
-		for (RagProfileActivation a : activations.findByState(RagProfileActivation.State.PENDING)) {
-			long terminal = jobs.countByProfileIdAndKindAndStateIn(
-					a.getTargetProfileId(), IngestionJobKind.REINDEX, terminalStates);
-			if (terminal < a.getTotalJobs()) {
-				continue;
-			}
-			long failed = jobs.countByProfileIdAndKindAndStateIn(
-					a.getTargetProfileId(), IngestionJobKind.REINDEX, failedState);
-			if (failed > 0) {
-				a.setState(RagProfileActivation.State.FAILED);
-				a.setErrorMessage(failed + " of " + a.getTotalJobs() + " re-index jobs failed");
-				a.setCompletedAt(java.time.Instant.now());
-				continue;
-			}
-			RagProfile previous = a.getPreviousProfileId() != null
-					? profiles.findById(a.getPreviousProfileId()).orElse(null) : null;
-			RagProfile targetProfile = profiles.findById(a.getTargetProfileId()).orElse(null);
-			switchActive(previous, targetProfile);
-			a.setState(RagProfileActivation.State.COMPLETED);
-			a.setCompletedAt(java.time.Instant.now());
-			if (a.getPreviousProfileId() != null) {
-				jobs.save(new IngestionJob(a.getTenantId(), IngestionJobKind.CLEANUP, null,
-						a.getPreviousProfileId(), properties.ingest().maxAttempts()));
-			}
-		}
-	}
-
-	@Transactional(readOnly = true)
-	public ActivationResponse activationStatus(UUID activationId) {
-		String tenantId = TenantContext.require();
-		RagProfileActivation a = activations.findById(activationId)
-				.filter(x -> x.getTenantId().equals(tenantId))
-				.orElseThrow(() -> ResourceNotFoundException.of("Profile activation", activationId));
-		return ActivationResponse.of(a);
-	}
-
 	// ---- helpers ---------------------------------------------------------- -
 
 	private RagProfile requireProfile(UUID id) {
@@ -263,23 +157,13 @@ public class RagProfileService {
 				.orElseThrow(() -> ResourceNotFoundException.of("RAG profile", id));
 	}
 
-	private void requireKnownEmbeddingModel(String id) {
-		if (!embeddingModels.availableIds().contains(id)) {
-			throw new IllegalArgumentException("Unknown or disabled embedding model '" + id
-					+ "'. Available: " + embeddingModels.availableIds());
-		}
-	}
-
 	private RagProfile seedDefault(String tenantId) {
 		RagProperties.Defaults d = properties.defaults();
 		RagProfile profile = new RagProfile.Builder()
 				.tenantId(tenantId).name("default").versionNo(1).active(true)
-				.chunkingStrategy(ChunkingStrategy.valueOf(d.chunkingStrategy()))
-				.chunkSize(d.chunkSize()).chunkOverlap(d.chunkOverlap())
-				.embeddingModelId(d.embeddingModelId())
 				.topK(d.topK()).similarityThreshold(d.similarityThreshold())
 				.rerankerEnabled(false).maxContextTokens(d.maxContextTokens())
-				.promptTemplate(d.promptTemplate()).hybridSearch(false).createdBy("system")
+				.promptTemplate(d.promptTemplate()).createdBy("system")
 				.build();
 		try {
 			return profiles.saveAndFlush(profile);

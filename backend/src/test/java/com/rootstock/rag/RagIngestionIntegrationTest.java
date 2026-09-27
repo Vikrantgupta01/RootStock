@@ -1,6 +1,8 @@
 package com.rootstock.rag;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -9,10 +11,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.rootstock.TestcontainersConfiguration;
+import com.rootstock.rag.blob.BlobStore;
 import com.rootstock.rag.document.DocumentStatus;
 import com.rootstock.rag.document.DocumentVersion;
 import com.rootstock.rag.document.DocumentVersionRepository;
 import com.rootstock.rag.ingest.IngestionService;
+import com.rootstock.rag.vector.BedrockKnowledgeBaseClient;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Assumptions;
@@ -22,16 +26,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.DockerClientFactory;
 
 /**
- * End-to-end Phase 1: upload -> ingest (fake embeddings, filesystem blobs,
- * Testcontainers Postgres) -> chunks land in vector_store_1024 -> tenant
- * isolation -> delete purges. Skips when Docker is unavailable.
+ * End-to-end: upload -> ingest -> a Bedrock Knowledge Base sync is triggered and
+ * the version flips to INDEXED -> tenant isolation -> delete purges the KB copy
+ * and triggers a cleanup sync. {@link BedrockKnowledgeBaseClient} is mocked --
+ * there is no local/Testcontainers stand-in for a real Knowledge Base -- so this
+ * exercises the document/version/job bookkeeping (Testcontainers Postgres) and the
+ * S3-sidecar contract, not Bedrock itself. Skips when Docker is unavailable.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -49,7 +56,10 @@ class RagIngestionIntegrationTest {
 	DocumentVersionRepository versions;
 
 	@Autowired
-	JdbcTemplate jdbcTemplate;
+	BlobStore blobStore;
+
+	@MockitoBean
+	BedrockKnowledgeBaseClient kb;
 
 	@BeforeAll
 	static void requireDocker() {
@@ -63,10 +73,8 @@ class RagIngestionIntegrationTest {
 		}
 	}
 
-	private long chunkCount(String tenantId) {
-		Long n = jdbcTemplate.queryForObject(
-				"select count(*) from vector_store_1024 where metadata->>'tenant_id' = ?", Long.class, tenantId);
-		return n == null ? 0 : n;
+	private static String kbObjectKey(String tenantId, UUID documentId, UUID versionId) {
+		return "rag-kb/" + tenantId + "/" + documentId + "/" + versionId;
 	}
 
 	@Test
@@ -86,13 +94,16 @@ class RagIngestionIntegrationTest {
 		UUID documentId = UUID.fromString(JsonPath.read(uploadJson, "$.documentId"));
 		UUID versionId = UUID.fromString(JsonPath.read(uploadJson, "$.version.id"));
 
+		String v1Key = kbObjectKey(tenant, documentId, versionId);
+		assertThat(blobStore.exists(v1Key)).isTrue();
+		assertThat(blobStore.exists(v1Key + ".metadata.json")).isTrue();
+
 		drainIngestionQueue();
+		verify(kb, times(1)).sync("test-kb", "test-ds");
 
 		DocumentVersion v1 = versions.findById(versionId).orElseThrow();
 		assertThat(v1.getStatus()).isEqualTo(DocumentStatus.INDEXED);
-		assertThat(v1.getChunkCount()).isGreaterThan(1);
 		assertThat(v1.getIndexedAt()).isNotNull();
-		assertThat(chunkCount(tenant)).isEqualTo(v1.getChunkCount());
 
 		// another tenant sees nothing
 		mockMvc.perform(get("/api/rag/documents").header("X-Tenant-Id", "someone-else"))
@@ -106,6 +117,7 @@ class RagIngestionIntegrationTest {
 						.header("X-Tenant-Id", tenant))
 				.andExpect(status().isCreated());
 		drainIngestionQueue();
+		verify(kb, times(2)).sync("test-kb", "test-ds");
 
 		mockMvc.perform(post("/api/rag/documents/{id}/versions/{n}/activate", documentId, 2)
 						.header("X-Tenant-Id", tenant))
@@ -115,10 +127,13 @@ class RagIngestionIntegrationTest {
 		List<DocumentVersion> allVersions = versions.findByDocumentIdOrderByVersionNoDesc(documentId);
 		assertThat(allVersions).hasSize(2).allMatch(v -> v.getStatus() == DocumentStatus.INDEXED);
 
-		// deleting the document purges every chunk for the tenant
+		// deleting the document purges the KB copy of every version and queues a cleanup sync each
 		mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 						.delete("/api/rag/documents/{id}", documentId).header("X-Tenant-Id", tenant))
 				.andExpect(status().isNoContent());
-		assertThat(chunkCount(tenant)).isZero();
+		assertThat(blobStore.exists(v1Key)).isFalse();
+
+		drainIngestionQueue();
+		verify(kb, times(4)).sync("test-kb", "test-ds"); // 2 ingests + 2 per-version cleanups
 	}
 }

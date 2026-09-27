@@ -1,7 +1,9 @@
 spring:
-  # Tests run against a Testcontainers Postgres (pgvector image) wired via
-  # @ServiceConnection. No AWS calls: the AI models are disabled so the context
-  # loads without credentials. Slice tests mock ChatService directly.
+  # Tests run against a Testcontainers Postgres wired via @ServiceConnection, for
+  # document/version/job bookkeeping only -- no vector data lives there anymore.
+  # No AWS calls: the AI models are disabled so the context loads without
+  # credentials, and BedrockKnowledgeBaseClient is mocked. Slice tests mock
+  # ChatService directly.
   ai:
     model:
       chat: none
@@ -9,8 +11,9 @@ spring:
 
 rootstock:
   rag:
-    embedding:
-      mode: fake
+    bedrock:
+      knowledge-base-id: test-kb
+      data-source-id: test-ds
     blob:
       backend: filesystem
       filesystem:

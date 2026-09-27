@@ -13,7 +13,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record RagProperties(
 		@DefaultValue Tenant tenant,
 		@DefaultValue Blob blob,
-		@DefaultValue Embedding embedding,
+		@DefaultValue Bedrock bedrock,
 		@DefaultValue Ingest ingest,
 		@DefaultValue Defaults defaults) {
 
@@ -39,9 +39,10 @@ public record RagProperties(
 		}
 	}
 
-	public record Embedding(
-			@DefaultValue("fake") String mode,
-			@DefaultValue("1024") int fakeDimensions,
+	/** The Bedrock Knowledge Base (Aurora PostgreSQL Serverless v2 vector store) backing RAG. */
+	public record Bedrock(
+			String knowledgeBaseId,
+			String dataSourceId,
 			@DefaultValue("us-east-1") String region) {
 	}
 
@@ -53,10 +54,6 @@ public record RagProperties(
 	}
 
 	public record Defaults(
-			@DefaultValue("CHARACTER") String chunkingStrategy,
-			@DefaultValue("1200") int chunkSize,
-			@DefaultValue("150") int chunkOverlap,
-			@DefaultValue("fake") String embeddingModelId,
 			@DefaultValue("4") int topK,
 			@DefaultValue("0.5") double similarityThreshold,
 			@DefaultValue("4000") int maxContextTokens,

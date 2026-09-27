@@ -10,8 +10,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.rootstock.common.GlobalExceptionHandler;
 import com.rootstock.common.ResourceNotFoundException;
-import com.rootstock.rag.ingest.ChunkingStrategy;
-import com.rootstock.rag.profile.dto.ActivationResponse;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -35,9 +33,8 @@ class RagProfileControllerTest {
 	private static RagProfile profile(String name, int versionNo, boolean active) {
 		return new RagProfile.Builder()
 				.tenantId("acme").name(name).versionNo(versionNo).active(active)
-				.chunkingStrategy(ChunkingStrategy.CHARACTER).chunkSize(1200).chunkOverlap(150)
-				.embeddingModelId("fake").topK(4).similarityThreshold(0.5).rerankerEnabled(false)
-				.maxContextTokens(4000).promptTemplate("{context}\n{question}").hybridSearch(false)
+				.topK(4).similarityThreshold(0.5).rerankerEnabled(false)
+				.maxContextTokens(4000).promptTemplate("{context}\n{question}")
 				.build();
 	}
 
@@ -81,13 +78,13 @@ class RagProfileControllerTest {
 	}
 
 	@Test
-	void activateReturnsActivationState() throws Exception {
+	void activateReturnsTheNowActiveProfile() throws Exception {
 		UUID id = UUID.randomUUID();
-		given(service.activate(eq(id))).willReturn(ActivationResponse.immediate(id, UUID.randomUUID()));
+		given(service.activate(eq(id))).willReturn(profile("accurate", 2, true));
 
 		mockMvc.perform(post("/api/rag/profiles/{id}/activate", id))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.state").value("COMPLETED"))
-				.andExpect(jsonPath("$.reindexRequired").value(false));
+				.andExpect(jsonPath("$.name").value("accurate"))
+				.andExpect(jsonPath("$.active").value(true));
 	}
 }

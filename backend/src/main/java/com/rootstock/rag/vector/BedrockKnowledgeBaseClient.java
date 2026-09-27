@@ -1,0 +1,122 @@
+package com.rootstock.rag.vector;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.stereotype.Component;
+import software.amazon.awssdk.services.bedrockagent.BedrockAgentClient;
+import software.amazon.awssdk.services.bedrockagent.model.ConflictException;
+import software.amazon.awssdk.services.bedrockagent.model.IngestionJobSortByAttribute;
+import software.amazon.awssdk.services.bedrockagent.model.IngestionJobStatus;
+import software.amazon.awssdk.services.bedrockagent.model.IngestionJobSummary;
+import software.amazon.awssdk.services.bedrockagent.model.SortOrder;
+import software.amazon.awssdk.services.bedrockagentruntime.BedrockAgentRuntimeClient;
+import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseRetrievalResult;
+import software.amazon.awssdk.services.bedrockagentruntime.model.RetrievalFilter;
+import software.amazon.awssdk.services.bedrockagentruntime.model.RetrieveResponse;
+
+/**
+ * Wraps the two Bedrock Knowledge Base API surfaces this app needs: the control
+ * plane ({@link BedrockAgentClient}) to trigger and wait for a data-source sync,
+ * and the data plane ({@link BedrockAgentRuntimeClient}) to retrieve chunks.
+ *
+ * <p>Bedrock re-syncs an entire data source per ingestion job -- there is no
+ * per-document sync -- and disallows two concurrent jobs on the same data source
+ * ({@link ConflictException}). {@link #sync} handles that by finding and waiting
+ * on the in-flight job instead of starting a new one, and gives up after a bounded
+ * poll window so the caller's own retry/backoff (the {@code ingestion_job} ledger)
+ * is what carries a slow sync across multiple attempts.
+ */
+@Component
+public class BedrockKnowledgeBaseClient {
+
+	private static final int MAX_POLLS = 20;
+	private static final Duration POLL_INTERVAL = Duration.ofSeconds(3);
+
+	private final BedrockAgentClient agent;
+	private final BedrockAgentRuntimeClient agentRuntime;
+
+	public BedrockKnowledgeBaseClient(BedrockAgentClient agent, BedrockAgentRuntimeClient agentRuntime) {
+		this.agent = agent;
+		this.agentRuntime = agentRuntime;
+	}
+
+	/**
+	 * Triggers a data-source sync and waits (bounded) for it to finish. Throws if
+	 * the job fails, is stopped, or does not complete within the poll window --
+	 * the caller's retry ledger is expected to call this again later.
+	 */
+	public void sync(String knowledgeBaseId, String dataSourceId) {
+		String jobId = startOrJoinInFlight(knowledgeBaseId, dataSourceId);
+		awaitCompletion(knowledgeBaseId, dataSourceId, jobId);
+	}
+
+	public List<KnowledgeBaseRetrievalResult> retrieve(String knowledgeBaseId, String queryText, int numberOfResults,
+			RetrievalFilter filter) {
+		RetrieveResponse response = agentRuntime.retrieve(r -> r
+				.knowledgeBaseId(knowledgeBaseId)
+				.retrievalQuery(q -> q.text(queryText))
+				.retrievalConfiguration(rc -> rc.vectorSearchConfiguration(vs -> vs
+						.numberOfResults(numberOfResults)
+						.filter(filter))));
+		return response.retrievalResults();
+	}
+
+	private String startOrJoinInFlight(String knowledgeBaseId, String dataSourceId) {
+		try {
+			var response = agent.startIngestionJob(r -> r.knowledgeBaseId(knowledgeBaseId).dataSourceId(dataSourceId));
+			return response.ingestionJob().ingestionJobId();
+		}
+		catch (ConflictException alreadyRunning) {
+			return findInFlightJobId(knowledgeBaseId, dataSourceId)
+					.orElseThrow(() -> new IllegalStateException(
+							"Bedrock reported a conflicting ingestion job on data source " + dataSourceId
+									+ " but none is currently in flight", alreadyRunning));
+		}
+	}
+
+	private Optional<String> findInFlightJobId(String knowledgeBaseId, String dataSourceId) {
+		var response = agent.listIngestionJobs(r -> r
+				.knowledgeBaseId(knowledgeBaseId)
+				.dataSourceId(dataSourceId)
+				.sortBy(s -> s.attribute(IngestionJobSortByAttribute.STARTED_AT).order(SortOrder.DESCENDING))
+				.maxResults(10));
+		return response.ingestionJobSummaries().stream()
+				.filter(BedrockKnowledgeBaseClient::inFlight)
+				.map(IngestionJobSummary::ingestionJobId)
+				.findFirst();
+	}
+
+	private static boolean inFlight(IngestionJobSummary summary) {
+		return summary.status() == IngestionJobStatus.STARTING || summary.status() == IngestionJobStatus.IN_PROGRESS;
+	}
+
+	private void awaitCompletion(String knowledgeBaseId, String dataSourceId, String ingestionJobId) {
+		for (int attempt = 0; attempt < MAX_POLLS; attempt++) {
+			IngestionJobStatus status = agent.getIngestionJob(r -> r
+							.knowledgeBaseId(knowledgeBaseId).dataSourceId(dataSourceId).ingestionJobId(ingestionJobId))
+					.ingestionJob().status();
+			if (status == IngestionJobStatus.COMPLETE) {
+				return;
+			}
+			if (status == IngestionJobStatus.FAILED || status == IngestionJobStatus.STOPPED) {
+				throw new IllegalStateException(
+						"Bedrock ingestion job " + ingestionJobId + " on data source " + dataSourceId
+								+ " ended with status " + status);
+			}
+			sleep();
+		}
+		throw new IllegalStateException("Bedrock ingestion job " + ingestionJobId + " on data source " + dataSourceId
+				+ " did not complete within " + (MAX_POLLS * POLL_INTERVAL.toSeconds()) + "s; will retry later");
+	}
+
+	private static void sleep() {
+		try {
+			Thread.sleep(POLL_INTERVAL.toMillis());
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("Interrupted while waiting on a Bedrock ingestion job", e);
+		}
+	}
+}

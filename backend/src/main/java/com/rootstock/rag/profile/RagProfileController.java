@@ -1,6 +1,5 @@
 package com.rootstock.rag.profile;
 
-import com.rootstock.rag.profile.dto.ActivationResponse;
 import com.rootstock.rag.profile.dto.CreateRagProfileRequest;
 import com.rootstock.rag.profile.dto.RagProfileResponse;
 import com.rootstock.rag.profile.dto.UpdateRagProfileRequest;
@@ -17,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import static org.springframework.http.HttpStatus.CREATED;
 
-/** Tunable RAG profiles: named, versioned config bundles with blue/green activation. */
+/** Tunable RAG profiles: named, versioned bundles of query-time settings. */
 @RestController
 @RequestMapping("/api/rag/profiles")
 public class RagProfileController {
@@ -56,12 +55,7 @@ public class RagProfileController {
 	}
 
 	@PostMapping("/{id}/activate")
-	public ActivationResponse activate(@PathVariable UUID id) {
-		return service.activate(id);
-	}
-
-	@GetMapping("/activations/{activationId}")
-	public ActivationResponse activationStatus(@PathVariable UUID activationId) {
-		return service.activationStatus(activationId);
+	public RagProfileResponse activate(@PathVariable UUID id) {
+		return RagProfileResponse.of(service.activate(id));
 	}
 }
