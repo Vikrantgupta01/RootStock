@@ -4,16 +4,26 @@ import { useActivateProfile, useCreateProfile, useProfileVersions, useProfiles, 
 import { formatDate } from '../../lib/format'
 import { StatusBadge } from './StatusBadge'
 
-type FormState = Required<Omit<ProfileUpdate, 'chatModelId' | 'rerankerModel'>>
+// The only Bedrock reranking model currently available in this account/region.
+// Extend to a dropdown if/when more become available.
+const RERANKER_MODEL_ID = 'cohere.rerank-v3-5:0'
+
+type FormState = Required<Omit<ProfileUpdate, 'chatModelId' | 'rerankerModel' | 'maxContextTokens'>>
 
 function toForm(p: RagProfile): FormState {
   return {
     topK: p.topK,
     similarityThreshold: p.similarityThreshold,
-    maxContextTokens: p.maxContextTokens,
     rerankerEnabled: p.rerankerEnabled,
     promptTemplate: p.promptTemplate,
   }
+}
+
+// maxContextTokens and chatModelId are stored on the profile but nothing reads
+// them yet (no context-budget truncation, no per-profile chat model wiring) --
+// left out of this form so it doesn't imply control that doesn't exist.
+function toBody(form: FormState): ProfileUpdate {
+  return { ...form, rerankerModel: form.rerankerEnabled ? RERANKER_MODEL_ID : null }
 }
 
 export function TuningTab() {
@@ -50,7 +60,7 @@ export function TuningTab() {
 
   async function saveVersion(thenActivate: boolean) {
     if (!selected || !form) return
-    const created = (await update.mutateAsync({ id: selected.id, body: form })) as RagProfile
+    const created = (await update.mutateAsync({ id: selected.id, body: toBody(form) })) as RagProfile
     setSelectedId(created.id)
     if (thenActivate) {
       await activate.mutateAsync(created.id)
@@ -60,7 +70,7 @@ export function TuningTab() {
   async function newProfile() {
     const name = prompt('Name for the new profile')?.trim()
     if (!name || !form) return
-    const created = (await create.mutateAsync({ name, ...form })) as RagProfile
+    const created = (await create.mutateAsync({ name, ...toBody(form) })) as RagProfile
     setSelectedId(created.id)
   }
 
@@ -107,16 +117,6 @@ export function TuningTab() {
             onChange={(e) => set('similarityThreshold', Number(e.target.value))}
           />
         </Field>
-        <Field label={`Max context tokens (${form.maxContextTokens})`}>
-          <input
-            type="number"
-            min={256}
-            max={200000}
-            step={256}
-            value={form.maxContextTokens}
-            onChange={(e) => set('maxContextTokens', Number(e.target.value))}
-          />
-        </Field>
         <Field label="Reranker">
           <label className="checkline">
             <input
@@ -124,7 +124,7 @@ export function TuningTab() {
               checked={form.rerankerEnabled}
               onChange={(e) => set('rerankerEnabled', e.target.checked)}
             />
-            enabled
+            enabled ({RERANKER_MODEL_ID})
           </label>
         </Field>
       </div>
