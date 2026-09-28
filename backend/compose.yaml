@@ -1,4 +1,9 @@
 services:
+  # Must be a pgvector-capable image, even though no vector columns are written
+  # here anymore (vector data lives in Bedrock's Aurora): V1__init.sql runs
+  # `CREATE EXTENSION IF NOT EXISTS vector` unconditionally, and that migration
+  # can't be edited -- its checksum is locked in against every already-migrated
+  # database. Plain postgres:16 doesn't ship the extension's files at all.
   db:
     image: 'pgvector/pgvector:pg16'
     environment:
