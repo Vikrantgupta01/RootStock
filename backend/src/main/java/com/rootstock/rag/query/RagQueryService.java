@@ -79,10 +79,18 @@ public class RagQueryService {
 		RetrievalFilter filter = KnowledgeBaseFilters.retrieval(tenantId,
 				usedVersionIds.stream().map(UUID::toString).toList());
 		String rerankerModelArn = rerankerModelArn(profile);
-		List<KnowledgeBaseRetrievalResult> hits = kb.retrieve(
-				properties.bedrock().knowledgeBaseId(), request.question(), topK, filter, rerankerModelArn).stream()
-				.filter(h -> h.score() == null || h.score() >= threshold)
-				.toList();
+		List<KnowledgeBaseRetrievalResult> rawHits = kb.retrieve(
+				properties.bedrock().knowledgeBaseId(), request.question(), topK, filter, rerankerModelArn);
+		// similarityThreshold is calibrated for raw cosine similarity. Once a
+		// reranker scores these, "score" means a relevance score on Cohere's own
+		// scale instead -- routinely well under 0.5 for a genuinely correct match
+		// -- so applying the same cutoff would silently reject good answers. The
+		// reranker has already done the relevance judgment; trust its ordering
+		// (and topK) instead of re-filtering on a number that no longer means the
+		// same thing.
+		List<KnowledgeBaseRetrievalResult> hits = rerankerModelArn != null
+				? rawHits
+				: rawHits.stream().filter(h -> h.score() == null || h.score() >= threshold).toList();
 		if (hits.isEmpty()) {
 			return ungrounded(profile, usedVersionIds,
 					"I couldn't find anything relevant to that question in the knowledge base.");
