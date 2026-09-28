@@ -115,17 +115,19 @@ public class DocumentService {
 	}
 
 	private DocumentVersion appendVersion(Document document, byte[] bytes, String contentType) {
-		String hash = sha256Hex(bytes);
-		String blobKey = "sha256/" + hash;
-		blobStore.put(blobKey, bytes, contentType);
-
 		int nextVersionNo = versions.findFirstByDocumentIdOrderByVersionNoDesc(document.getId())
 				.map(v -> v.getVersionNo() + 1)
 				.orElse(1);
+		String hash = sha256Hex(bytes);
+		String blobKey = knowledgeBaseObjectKey(document.getTenantId(), document.getId(), nextVersionNo);
+		blobStore.put(blobKey, bytes, contentType);
+
 		DocumentVersion version = versions.save(new DocumentVersion(
 				document.getId(), document.getTenantId(), nextVersionNo, blobKey, hash, bytes.length));
 
-		putKnowledgeBaseCopy(document.getTenantId(), document.getId(), version.getId(), bytes, contentType);
+		// The sidecar tags the version's own UUID (not its versionNo) since that's
+		// what query-time retrieval filters against -- only available once saved.
+		writeMetadataSidecar(blobKey, document.getTenantId(), document.getId(), version.getId());
 		jobs.save(new IngestionJob(document.getTenantId(), IngestionJobKind.INGEST,
 				version.getId(), null, properties.ingest().maxAttempts()));
 		return version;
@@ -145,8 +147,9 @@ public class DocumentService {
 	public DocumentVersionResponse reindexVersion(UUID documentId, int versionNo) {
 		Document document = requireDocument(documentId);
 		DocumentVersion version = requireVersion(document.getId(), versionNo);
-		putKnowledgeBaseCopy(document.getTenantId(), document.getId(), version.getId(),
-				readBytes(version.getBlobKey()), document.getContentType());
+		byte[] bytes = readBytes(version.getBlobKey());
+		blobStore.put(version.getBlobKey(), bytes, document.getContentType());
+		writeMetadataSidecar(version.getBlobKey(), document.getTenantId(), document.getId(), version.getId());
 		jobs.save(new IngestionJob(document.getTenantId(), IngestionJobKind.REINDEX,
 				version.getId(), null, properties.ingest().maxAttempts()));
 		version.setStatus(DocumentStatus.PENDING);
@@ -158,7 +161,7 @@ public class DocumentService {
 	public void deleteVersion(UUID documentId, int versionNo) {
 		Document document = requireDocument(documentId);
 		DocumentVersion version = requireVersion(document.getId(), versionNo);
-		purgeKnowledgeBaseCopy(document.getTenantId(), document.getId(), version.getId());
+		purgeKnowledgeBaseCopy(document.getTenantId(), version.getBlobKey());
 		if (version.getId().equals(document.getActiveVersionId())) {
 			document.setActiveVersionId(null);
 		}
@@ -169,29 +172,19 @@ public class DocumentService {
 	public void deleteDocument(UUID documentId) {
 		Document document = requireDocument(documentId);
 		for (DocumentVersion version : versions.findByDocumentIdOrderByVersionNoDesc(document.getId())) {
-			purgeKnowledgeBaseCopy(document.getTenantId(), document.getId(), version.getId());
+			purgeKnowledgeBaseCopy(document.getTenantId(), version.getBlobKey());
 		}
 		document.setActiveVersionId(null);
 		documents.delete(document); // document_version rows cascade in the DB
 	}
 
-	/**
-	 * Writes the S3 object + {@code .metadata.json} sidecar Bedrock's data source
-	 * ingests, under a key scoped to this exact version -- kept separate from the
-	 * content-addressed {@code blobKey} so two versions (or tenants) that happen to
-	 * share identical bytes never share a Bedrock-side document or its metadata.
-	 */
-	private void putKnowledgeBaseCopy(String tenantId, UUID documentId, UUID versionId, byte[] bytes,
-			String contentType) {
-		String key = knowledgeBaseObjectKey(tenantId, documentId, versionId);
-		blobStore.put(key, bytes, contentType);
-		blobStore.put(key + ".metadata.json", metadataSidecar(tenantId, documentId, versionId), "application/json");
+	private void writeMetadataSidecar(String blobKey, String tenantId, UUID documentId, UUID versionId) {
+		blobStore.put(blobKey + ".metadata.json", metadataSidecar(tenantId, documentId, versionId), "application/json");
 	}
 
-	private void purgeKnowledgeBaseCopy(String tenantId, UUID documentId, UUID versionId) {
-		String key = knowledgeBaseObjectKey(tenantId, documentId, versionId);
-		blobStore.delete(key);
-		blobStore.delete(key + ".metadata.json");
+	private void purgeKnowledgeBaseCopy(String tenantId, String blobKey) {
+		blobStore.delete(blobKey);
+		blobStore.delete(blobKey + ".metadata.json");
 		// No documentVersionId: the version row (and, via its FK cascade, any job
 		// referencing it) is about to be deleted by the caller. CLEANUP jobs don't
 		// need it anyway -- IngestionPipeline only uses one to trigger a sync.
@@ -199,8 +192,16 @@ public class DocumentService {
 				properties.ingest().maxAttempts()));
 	}
 
-	private static String knowledgeBaseObjectKey(String tenantId, UUID documentId, UUID versionId) {
-		return "rag-kb/" + tenantId + "/" + documentId + "/" + versionId;
+	/**
+	 * The single S3 object a document version lives at -- read for downloads,
+	 * written/overwritten for (re-)ingestion, deleted on cleanup. Scoped by
+	 * tenant/document/version-number rather than content hash, so two versions
+	 * (or tenants) that happen to share identical bytes never share a key -- each
+	 * version, even an unchanged re-upload, gets its own independent object and
+	 * lifecycle.
+	 */
+	private static String knowledgeBaseObjectKey(String tenantId, UUID documentId, int versionNo) {
+		return "rag-kb/" + tenantId + "/" + documentId + "/v" + versionNo;
 	}
 
 	private static byte[] metadataSidecar(String tenantId, UUID documentId, UUID versionId) {

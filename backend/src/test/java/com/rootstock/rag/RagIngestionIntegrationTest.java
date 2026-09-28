@@ -82,8 +82,8 @@ class RagIngestionIntegrationTest {
 		}
 	}
 
-	private static String kbObjectKey(String tenantId, UUID documentId, UUID versionId) {
-		return "rag-kb/" + tenantId + "/" + documentId + "/" + versionId;
+	private static String kbObjectKey(String tenantId, UUID documentId, int versionNo) {
+		return "rag-kb/" + tenantId + "/" + documentId + "/v" + versionNo;
 	}
 
 	@Test
@@ -103,7 +103,7 @@ class RagIngestionIntegrationTest {
 		UUID documentId = UUID.fromString(JsonPath.read(uploadJson, "$.documentId"));
 		UUID versionId = UUID.fromString(JsonPath.read(uploadJson, "$.version.id"));
 
-		String v1Key = kbObjectKey(tenant, documentId, versionId);
+		String v1Key = kbObjectKey(tenant, documentId, 1);
 		assertThat(blobStore.exists(v1Key)).isTrue();
 		assertThat(blobStore.exists(v1Key + ".metadata.json")).isTrue();
 

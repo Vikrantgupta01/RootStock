@@ -111,10 +111,13 @@ S3 `.metadata.json` sidecar and filtered on at query time).
 
 **Documents & versions**
 - `POST /api/rag/documents` (multipart `file`, optional `sourceKey`, `displayName`)
-  → uploads the file to S3 (twice: once content-addressed for re-downloading,
-  once under a per-version key + metadata sidecar that Bedrock's data source
-  reads), creates version 1, queues a sync job. Re-POST the same `sourceKey`,
-  or `POST /api/rag/documents/{id}/versions`, to add a version.
+  → uploads the file to S3 under a key scoped to this exact tenant/document/
+  version (`rag-kb/<tenantId>/<documentId>/v<versionNo>`), plus a
+  `.metadata.json` sidecar Bedrock's data source reads for tenant filtering.
+  This same object serves both downloads and Bedrock ingestion — no separate
+  content-addressed copy. Creates version 1, queues a sync job. Re-POST the
+  same `sourceKey`, or `POST /api/rag/documents/{id}/versions`, to add a
+  version.
 - Background poller triggers a Bedrock Knowledge Base data-source sync
   (Bedrock owns parsing/chunking/embedding entirely) and waits for it to
   report success — including a check that it actually processed something,

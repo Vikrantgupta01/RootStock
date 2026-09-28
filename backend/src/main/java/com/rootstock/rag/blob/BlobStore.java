@@ -6,7 +6,8 @@ import java.util.Optional;
 
 /**
  * Content-addressed binary storage for uploaded documents. Keys are opaque
- * strings (this codebase uses {@code sha256/<hex>}); {@link #put} is idempotent.
+ * strings (this codebase uses {@code rag-kb/<tenantId>/<documentId>/v<versionNo>});
+ * {@link #put} is idempotent.
  */
 public interface BlobStore {
 

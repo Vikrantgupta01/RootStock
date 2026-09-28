@@ -10,8 +10,8 @@ import java.util.Optional;
 
 /**
  * Stores blobs as files under a root directory. Keys may contain {@code /}
- * (e.g. {@code sha256/abcd...}); path traversal is rejected. Suitable for local
- * development and single-node deployments.
+ * (e.g. {@code rag-kb/tenant/documentId/v1}); path traversal is rejected.
+ * Suitable for local development and single-node deployments.
  */
 public class FilesystemBlobStore implements BlobStore {
 
