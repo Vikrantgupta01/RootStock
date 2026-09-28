@@ -129,8 +129,9 @@ S3 `.metadata.json` sidecar and filtered on at query time).
 
 **Query profiles** — named, versioned bundles of query-time knobs only
 (chunking/embedding are fixed at the Bedrock Knowledge Base/data-source level,
-not per-profile): top-k, similarity threshold, chat model id (not yet wired —
-see Known limitations), prompt template, and optional reranking.
+not per-profile): top-k, similarity threshold, chat model id and max context
+tokens (editable, not yet wired to behavior — see Roadmap), prompt template,
+and optional reranking.
 - `GET/POST /api/rag/profiles`, `GET /api/rag/profiles/{id}`,
   `GET/POST /api/rag/profiles/{id}/versions` (editing makes a new version).
 - `POST /api/rag/profiles/{id}/activate` — always an immediate pointer flip;
@@ -155,8 +156,10 @@ Configuration table above for the Bedrock/blob-store keys):
 - **Documents** tab — drag-and-drop upload with progress; expandable version rows
   (activate / reindex / download / delete); add-a-version dropzone per document.
 - **Tuning** tab — edit a profile's top-k / similarity threshold / reranker /
-  prompt template, "Save version" vs "Save & activate" (always immediate now),
-  version history with per-version activate.
+  prompt template / chat model override / max context tokens (the last two
+  save but don't affect behavior yet — see Roadmap), "Save version" vs
+  "Save & activate" (always immediate now), version history with per-version
+  activate.
 - **Playground** tab — ask a question, see the grounded answer with citation
   chips; optional top-k / threshold overrides.
 - **Activity** tab — the ingestion job feed, auto-refreshing while work is queued.
@@ -164,16 +167,20 @@ Configuration table above for the Bedrock/blob-store keys):
 A **Tenant** field in the header sets the `X-Tenant-Id` header for every request
 (stored in `localStorage`).
 
-**Known limitations:**
-- `chatModelId` and `maxContextTokens` are stored on a profile and exposed via
-  the API, but nothing reads them yet — every query uses the single globally
-  configured `BEDROCK_MODEL`, and there's no context-token budget/truncation
-  logic. Not shown in the Tuning tab so the UI doesn't imply control that
-  doesn't exist.
-- The Bedrock Knowledge Base's S3 data source currently scans the whole
-  configured bucket, not just the app's own prefix — harmless (untagged
-  objects never match a tenant filter) but wastes embedding cost on every sync
-  if the bucket has other content in it.
+## Roadmap
+
+Not yet functional, but with groundwork already in place so a future release
+doesn't need a schema/UI change to add them:
+
+- **Per-profile chat model** (`chatModelId`) — the Tuning tab lets you set an
+  override per profile and it's saved with the profile, but every query still
+  answers via the single globally configured `BEDROCK_MODEL`. Wiring this up
+  means `RagQueryService` passing the profile's model id through to
+  `ChatService` instead of always using the default `ChatClient`.
+- **Context-token budgeting** (`maxContextTokens`) — same story: editable and
+  saved, not yet enforced. Wiring this up means truncating/prioritizing
+  retrieved chunks in `RagQueryService.renderContext()` against a token
+  budget instead of concatenating everything retrieved.
 
 ## Tests
 

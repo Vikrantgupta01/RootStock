@@ -151,6 +151,7 @@ observable.
 - No automated test exercises real AWS end-to-end (by design — CI shouldn't
   depend on live cloud resources). The manual walkthroughs above are
   currently the only way to validate the real Bedrock/Aurora/S3 wiring.
-- `RagProfile.chatModelId` and `.maxContextTokens` are stored and returned by
-  the API but nothing reads them — don't write a test asserting they change
-  query behavior, they don't (see README's Known limitations).
+- `RagProfile.chatModelId` and `.maxContextTokens` are stored, returned by the
+  API, and editable in the Tuning tab, but nothing reads them at query time
+  yet — don't write a test asserting they change query behavior, they don't
+  (see README's Roadmap).

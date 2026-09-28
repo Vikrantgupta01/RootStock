@@ -8,20 +8,19 @@ import { StatusBadge } from './StatusBadge'
 // Extend to a dropdown if/when more become available.
 const RERANKER_MODEL_ID = 'cohere.rerank-v3-5:0'
 
-type FormState = Required<Omit<ProfileUpdate, 'chatModelId' | 'rerankerModel' | 'maxContextTokens'>>
+type FormState = Required<Omit<ProfileUpdate, 'rerankerModel'>>
 
 function toForm(p: RagProfile): FormState {
   return {
+    chatModelId: p.chatModelId,
     topK: p.topK,
     similarityThreshold: p.similarityThreshold,
     rerankerEnabled: p.rerankerEnabled,
+    maxContextTokens: p.maxContextTokens,
     promptTemplate: p.promptTemplate,
   }
 }
 
-// maxContextTokens and chatModelId are stored on the profile but nothing reads
-// them yet (no context-budget truncation, no per-profile chat model wiring) --
-// left out of this form so it doesn't imply control that doesn't exist.
 function toBody(form: FormState): ProfileUpdate {
   return { ...form, rerankerModel: form.rerankerEnabled ? RERANKER_MODEL_ID : null }
 }
@@ -127,7 +126,32 @@ export function TuningTab() {
             enabled ({RERANKER_MODEL_ID})
           </label>
         </Field>
+        <Field label="Chat model override">
+          <input
+            type="text"
+            placeholder="e.g. us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+            value={form.chatModelId ?? ''}
+            onChange={(e) => set('chatModelId', e.target.value || null)}
+          />
+        </Field>
+        <Field label={`Max context tokens (${form.maxContextTokens})`}>
+          <input
+            type="number"
+            min={256}
+            max={200000}
+            step={256}
+            value={form.maxContextTokens}
+            onChange={(e) => set('maxContextTokens', Number(e.target.value))}
+          />
+        </Field>
       </div>
+
+      <p className="hint">
+        Chat model override and max context tokens are saved with the profile
+        but not applied yet — every query still uses the server's single
+        configured chat model with no context-token budget. Coming in a future
+        release; values you set now will carry over once that's wired up.
+      </p>
 
       <Field label="Prompt template — must contain {context} and {question}">
         <textarea
