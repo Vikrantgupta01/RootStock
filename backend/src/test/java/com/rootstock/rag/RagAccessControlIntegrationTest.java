@@ -17,6 +17,7 @@ import com.jayway.jsonpath.JsonPath;
 import com.rootstock.TestcontainersConfiguration;
 import com.rootstock.auth.CognitoService;
 import com.rootstock.auth.TestTokens;
+import com.rootstock.auth.UserRole;
 import com.rootstock.rag.blob.BlobStore;
 import com.rootstock.rag.ingest.IngestionService;
 import com.rootstock.rag.vector.BedrockKnowledgeBaseClient;
@@ -141,6 +142,44 @@ class RagAccessControlIntegrationTest {
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"name\":\"hr-only\"}"))
 				.andExpect(status().isForbidden());
+		mockMvc.perform(post("/api/rag/users")
+						.with(TestTokens.viewer(tenant))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"email\":\"x@example.com\",\"password\":\"Sup3r-Secret!23\",\"role\":\"ADMIN\"}"))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void anAdminCanOnlyCreateUsersInTheirOwnTenant() throws Exception {
+		String tenant = tenant();
+		mockMvc.perform(post("/api/rag/access-groups")
+						.with(TestTokens.admin(tenant))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"name\":\"hr-only\"}"))
+				.andExpect(status().isOk());
+
+		// The body names another tenant; it must have no effect -- the tenant comes
+		// from the caller's token, and there is no request field that can override it.
+		mockMvc.perform(post("/api/rag/users")
+						.with(TestTokens.admin(tenant))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"email\":\"New.Person@Example.COM\",\"password\":\"Sup3r-Secret!23\","
+								+ "\"role\":\"EDITOR\",\"groups\":[\"hr-only\"],\"tenantId\":\"someone-else\"}"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.email").value("new.person@example.com"))
+				.andExpect(jsonPath("$.role").value("EDITOR"));
+		verify(cognito).createUser("new.person@example.com", "Sup3r-Secret!23", tenant, UserRole.EDITOR);
+		verify(cognito).addUserToGroup("new.person@example.com", "hr-only");
+
+		// A group that doesn't exist in this tenant is rejected before any user is made.
+		mockMvc.perform(post("/api/rag/users")
+						.with(TestTokens.admin(tenant))
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"email\":\"other@example.com\",\"password\":\"Sup3r-Secret!23\","
+								+ "\"role\":\"VIEWER\",\"groups\":[\"no-such-group\"]}"))
+				.andExpect(status().isNotFound());
+		verify(cognito, org.mockito.Mockito.never())
+				.createUser(eq("other@example.com"), any(), any(), any());
 	}
 
 	@Test

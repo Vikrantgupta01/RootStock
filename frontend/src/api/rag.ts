@@ -1,6 +1,7 @@
 // Typed client for the RAG subsystem. Every call carries the signed-in user's
 // Cognito ID token; the backend derives the tenant from it.
 
+import type { Role } from './auth'
 import { BASE_URL, request, toApiError, type ApiError } from './http'
 import { authHeaders } from './session'
 
@@ -125,6 +126,19 @@ export interface RagAnswer {
   usedVersionIds: string[]
 }
 
+export interface CreateUser {
+  email: string
+  password: string
+  role: Role
+  groups?: string[]
+}
+
+export interface CreatedUser {
+  email: string
+  role: Role
+  groups: string[]
+}
+
 export interface QueryRequest {
   question: string
   profileId?: string | null
@@ -232,6 +246,12 @@ export const rag = {
       request<RagProfile>(`/api/rag/profiles/${id}/versions`, { method: 'POST', body: JSON.stringify(body) }),
     activate: (id: string) =>
       request<RagProfile>(`/api/rag/profiles/${id}/activate`, { method: 'POST' }),
+  },
+
+  /** Admin-only: create a user in the caller's own tenant (the backend never takes one from the body). */
+  users: {
+    create: (body: CreateUser) =>
+      request<CreatedUser>('/api/rag/users', { method: 'POST', body: JSON.stringify(body) }),
   },
 
   accessGroups: {

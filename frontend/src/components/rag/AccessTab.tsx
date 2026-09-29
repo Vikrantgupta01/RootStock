@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ApiError } from '../../api/http'
 import { useAccessGroups, useCreateAccessGroup } from '../../hooks/access'
+import { NewUserForm } from './NewUserForm'
 
 /**
  * Creates the groups documents can be restricted to. Membership is not managed
@@ -57,6 +58,8 @@ export function AccessTab() {
           Created in the Cognito user pool as well as here. Add users to it from the Cognito console.
         </p>
       </form>
+
+      <NewUserForm groups={groups.data ?? []} />
 
       {groups.isLoading && <p className="muted">Loading groups…</p>}
       {groups.data && groups.data.length === 0 && <p className="muted">No groups yet.</p>}

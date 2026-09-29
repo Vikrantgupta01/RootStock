@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ApiError } from '../api/http'
-import { rag } from '../api/rag'
+import { rag, type CreateUser, type CreatedUser } from '../api/rag'
 import { useTenantId } from './useTenantId'
 
 /** Groups available to tag documents with. Admin/editor only -- 403 otherwise. */
@@ -28,5 +28,12 @@ export function useSetDocumentAccessGroups() {
   return useMutation<unknown, ApiError, { documentId: string; groups: string[] }>({
     mutationFn: ({ documentId, groups }) => rag.accessGroups.setForDocument(documentId, groups),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['rag', tenant] }),
+  })
+}
+
+/** Admin-only. The new user's tenant is the caller's own; there is nothing to pass. */
+export function useCreateUser() {
+  return useMutation<CreatedUser, ApiError, CreateUser>({
+    mutationFn: (body) => rag.users.create(body),
   })
 }

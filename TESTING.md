@@ -149,9 +149,25 @@ uploaded object's S3 metadata sidecar, filtered on at query time via Bedrock's
 it comes from the signed token, so there is no header to change.
 
 **Roles**: with a `VIEWER` token, `GET /documents` and `POST /query` return 200
-while `POST /documents`, `POST /profiles` and `POST /access-groups` return 403.
-With no token (or a malformed one) every route above returns 401, and
-`GET /api/health` still returns 200.
+while `POST /documents`, `POST /profiles`, `POST /access-groups` and
+`POST /users` return 403. With no token (or a malformed one) every route above
+returns 401, and `GET /api/health` still returns 200.
+
+**User creation** (ADMIN only) — the check that matters is that the tenant
+can't be chosen:
+
+```bash
+curl -s "${H[@]}" -H 'Content-Type: application/json' -d '{
+  "email":"dana@example.com","password":"Sunset-Harbor-42!",
+  "role":"EDITOR","groups":["hr-only"],"tenantId":"someone-else"}' $B/users
+```
+
+The extra `tenantId` is ignored — log in as the new user and confirm
+`GET /api/auth/me` reports the *creating admin's* tenant, role `EDITOR` and the
+group. They should sign in on the first try: a password-change challenge would
+mean the permanent password wasn't set, and login would 401. A password that
+fails the pool policy returns 400, a duplicate email 409, and an access group
+that doesn't exist in the tenant 404 (checked before the user is created).
 
 **Document access groups** (needs two users in the same tenant, one in a
 Cognito group, one not):

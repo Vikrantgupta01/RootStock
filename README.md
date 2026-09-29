@@ -145,9 +145,20 @@ secrets. The app's IAM identity needs `cognito-idp:InitiateAuth` plus the
 group-admin actions (`CreateGroup`, `ListGroups`, `AdminAddUserToGroup`,
 `AdminRemoveUserFromGroup`), scoped to that one pool.
 
-Seed the first admin with the AWS CLI (`admin-create-user` +
-`admin-set-user-password`, setting `custom:tenant_id` and `custom:role=ADMIN`)
-— there's no self-service sign-up.
+**Creating users.** `POST /api/rag/users` (ADMIN only) takes
+`{email, password, role, groups?}` and creates the user in Cognito, ready to
+sign in — the password is set as permanent, because this app answers no auth
+challenges and a `FORCE_CHANGE_PASSWORD` account could never get past login.
+There is deliberately **no tenant field**: the backend takes it from the
+caller's token, so an admin can hand out any role, including `ADMIN`, but only
+ever inside the tenant they already administer. The Access tab has a form for
+it.
+
+A tenant's **first** admin can't come from there — with no admin yet, nothing
+could authorize the call. That stays an out-of-band `aws cognito-idp
+admin-create-user` + `admin-set-user-password` (setting `custom:tenant_id` and
+`custom:role=ADMIN`), gated by IAM rather than by this application. There is no
+self-service sign-up.
 
 ## Knowledge base / RAG
 

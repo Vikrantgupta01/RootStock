@@ -1,21 +1,29 @@
 package com.rootstock.auth;
 
+import com.rootstock.common.DuplicateResourceException;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminAddUserToGroupRequest;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminCreateUserRequest;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminRemoveUserFromGroupRequest;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.AdminSetUserPasswordRequest;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.AttributeType;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AuthFlowType;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.AuthenticationResultType;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.CreateGroupRequest;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.GroupExistsException;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.InitiateAuthRequest;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.InitiateAuthResponse;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.InvalidParameterException;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.InvalidPasswordException;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.ListGroupsRequest;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.MessageActionType;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.NotAuthorizedException;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.UserNotConfirmedException;
 import software.amazon.awssdk.services.cognitoidentityprovider.model.UserNotFoundException;
+import software.amazon.awssdk.services.cognitoidentityprovider.model.UsernameExistsException;
 
 /**
  * The application's only outbound calls to Cognito: exchanging credentials for
@@ -98,6 +106,59 @@ public class CognitoService {
 		catch (GroupExistsException alreadyThere) {
 			// Nothing to do -- the desired end state is exactly what already exists.
 		}
+	}
+
+	/**
+	 * Creates a confirmed, ready-to-sign-in user. Two calls, not one: Cognito's
+	 * {@code AdminCreateUser} can only set a <em>temporary</em> password, which
+	 * leaves the account in {@code FORCE_CHANGE_PASSWORD} -- and this app answers
+	 * no auth challenges, so such an account could never sign in.
+	 *
+	 * @param role      goes into {@code custom:role}; drives every {@code @PreAuthorize} check
+	 * @param tenantId  goes into {@code custom:tenant_id}; scopes everything the user can reach
+	 */
+	public void createUser(String email, String password, String tenantId, UserRole role) {
+		try {
+			cognito.adminCreateUser(AdminCreateUserRequest.builder()
+					.userPoolId(properties.userPoolId())
+					.username(email)
+					// No invitation email: this app has no hosted UI to send anyone to,
+					// and the password is handed over out of band.
+					.messageAction(MessageActionType.SUPPRESS)
+					.userAttributes(
+							attribute("email", email),
+							attribute("email_verified", "true"),
+							attribute(CognitoClaimsFilter.CLAIM_TENANT_ID, tenantId),
+							attribute(CognitoClaimsFilter.CLAIM_ROLE, role.name()))
+					.build());
+		}
+		catch (UsernameExistsException exists) {
+			throw new DuplicateResourceException("A user with the email address " + email + " already exists.");
+		}
+		catch (InvalidPasswordException | InvalidParameterException rejected) {
+			// Cognito's own message names the policy rule that failed, which is more
+			// useful than anything this app could restate.
+			throw new IllegalArgumentException(rejected.awsErrorDetails().errorMessage());
+		}
+
+		try {
+			cognito.adminSetUserPassword(AdminSetUserPasswordRequest.builder()
+					.userPoolId(properties.userPoolId())
+					.username(email)
+					.password(password)
+					.permanent(true)
+					.build());
+		}
+		catch (InvalidPasswordException weak) {
+			// The account exists but has no usable password. Say so plainly rather
+			// than reporting a generic failure for a half-created user.
+			throw new IllegalArgumentException(weak.awsErrorDetails().errorMessage()
+					+ " The account was created but cannot sign in until a password is set for it.");
+		}
+	}
+
+	private static AttributeType attribute(String name, String value) {
+		return AttributeType.builder().name(name).value(value).build();
 	}
 
 	public void addUserToGroup(String username, String groupName) {
