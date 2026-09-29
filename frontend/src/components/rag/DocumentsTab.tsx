@@ -1,5 +1,7 @@
 import { Fragment, useState } from 'react'
 import { rag, type DocumentVersion } from '../../api/rag'
+import { useAccessGroups, useSetDocumentAccessGroups } from '../../hooks/access'
+import { hasRole, useCurrentUser } from '../../hooks/useSession'
 import {
   useAddVersion,
   useActivateVersion,
@@ -22,6 +24,11 @@ interface UploadRow {
 }
 
 export function DocumentsTab() {
+  const user = useCurrentUser()
+  // Viewers can read the library and query it; changing it is EDITOR and up, and
+  // the backend enforces the same rule -- hiding the controls just avoids
+  // offering an action that would come back 403.
+  const canEdit = hasRole(user.data, 'ADMIN', 'EDITOR')
   const documents = useDocuments()
   const upload = useUploadDocument()
   const [uploads, setUploads] = useState<UploadRow[]>([])
@@ -46,7 +53,11 @@ export function DocumentsTab() {
 
   return (
     <div className="stack">
-      <Dropzone onFiles={handleFiles} disabled={upload.isPending && uploads.length > 3} />
+      {canEdit ? (
+        <Dropzone onFiles={handleFiles} disabled={upload.isPending && uploads.length > 3} />
+      ) : (
+        <p className="muted">You have read-only access to this knowledge base.</p>
+      )}
 
       {uploads.length > 0 && (
         <ul className="uploads">
@@ -84,6 +95,7 @@ export function DocumentsTab() {
               <th>Type</th>
               <th>Versions</th>
               <th>Active</th>
+              <th>Access</th>
               <th>Updated</th>
               <th aria-label="expand" />
             </tr>
@@ -104,12 +116,23 @@ export function DocumentsTab() {
                   <td>
                     <StatusBadge status={d.activeStatus} />
                   </td>
+                  <td>
+                    {d.accessGroups.length === 0 ? (
+                      <span className="muted small">everyone</span>
+                    ) : (
+                      d.accessGroups.map((g) => (
+                        <span key={g} className="pill">
+                          {g}
+                        </span>
+                      ))
+                    )}
+                  </td>
                   <td className="muted">{formatDate(d.updatedAt)}</td>
                   <td>{expanded === d.id ? '▾' : '▸'}</td>
                 </tr>
                 {expanded === d.id && (
                   <tr>
-                    <td colSpan={6} className="table__detail">
+                    <td colSpan={7} className="table__detail">
                       <DocumentDetailPanel id={d.id} />
                     </td>
                   </tr>
@@ -124,6 +147,9 @@ export function DocumentsTab() {
 }
 
 function DocumentDetailPanel({ id }: { id: string }) {
+  const user = useCurrentUser()
+  const canEdit = hasRole(user.data, 'ADMIN', 'EDITOR')
+  const isAdmin = hasRole(user.data, 'ADMIN')
   const detail = useDocument(id)
   const addVersion = useAddVersion()
   const activate = useActivateVersion()
@@ -174,7 +200,7 @@ function DocumentDetailPanel({ id }: { id: string }) {
               <td>{v.chunkCount}</td>
               <td className="muted">{formatDate(v.indexedAt)}</td>
               <td className="row-actions">
-                {!v.active && (
+                {canEdit && !v.active && (
                   <button
                     className="btn btn--sm"
                     disabled={activate.isPending}
@@ -183,50 +209,107 @@ function DocumentDetailPanel({ id }: { id: string }) {
                     activate
                   </button>
                 )}
-                <button
-                  className="btn btn--ghost btn--sm"
-                  disabled={reindex.isPending}
-                  onClick={() => reindex.mutate({ id, versionNo: v.versionNo })}
-                >
-                  reindex
-                </button>
+                {canEdit && (
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    disabled={reindex.isPending}
+                    onClick={() => reindex.mutate({ id, versionNo: v.versionNo })}
+                  >
+                    reindex
+                  </button>
+                )}
                 <button
                   className="btn btn--ghost btn--sm"
                   onClick={() => rag.documents.download(id, v.versionNo, doc.displayName)}
                 >
                   download
                 </button>
-                <button
-                  className="btn btn--ghost btn--sm btn--danger"
-                  disabled={deleteVersion.isPending}
-                  onClick={() => deleteVersion.mutate({ id, versionNo: v.versionNo })}
-                >
-                  delete
-                </button>
+                {canEdit && (
+                  <button
+                    className="btn btn--ghost btn--sm btn--danger"
+                    disabled={deleteVersion.isPending}
+                    onClick={() => deleteVersion.mutate({ id, versionNo: v.versionNo })}
+                  >
+                    delete
+                  </button>
+                )}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <div className="detail-footer">
-        {progress === null ? (
-          <Dropzone onFiles={onAddVersion} hint="drop or click to upload a new version of this document" />
-        ) : (
-          <span className="uploads__bar">
-            <span className="uploads__fill" style={{ width: `${Math.round(progress * 100)}%` }} />
-          </span>
-        )}
-        <button
-          className="btn btn--ghost btn--danger"
-          disabled={deleteDocument.isPending}
-          onClick={() => {
-            if (confirm(`Delete "${doc.displayName}" and all its versions?`)) deleteDocument.mutate(id)
-          }}
-        >
-          delete document
-        </button>
-      </div>
+      {isAdmin && <AccessGroupEditor documentId={id} current={doc.accessGroups} />}
+
+      {canEdit && (
+        <div className="detail-footer">
+          {progress === null ? (
+            <Dropzone onFiles={onAddVersion} hint="drop or click to upload a new version of this document" />
+          ) : (
+            <span className="uploads__bar">
+              <span className="uploads__fill" style={{ width: `${Math.round(progress * 100)}%` }} />
+            </span>
+          )}
+          <button
+            className="btn btn--ghost btn--danger"
+            disabled={deleteDocument.isPending}
+            onClick={() => {
+              if (confirm(`Delete "${doc.displayName}" and all its versions?`)) deleteDocument.mutate(id)
+            }}
+          >
+            delete document
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Which groups may retrieve this document. Saving re-syncs the knowledge base,
+ * because Bedrock filters on its own copy of the grants and only re-reads them
+ * on the next ingestion job -- until then the previous grants still apply.
+ */
+function AccessGroupEditor({ documentId, current }: { documentId: string; current: string[] }) {
+  const groups = useAccessGroups()
+  const save = useSetDocumentAccessGroups()
+  const [selected, setSelected] = useState<string[]>(current)
+
+  const dirty =
+    selected.length !== current.length || selected.some((g) => !current.includes(g))
+
+  function toggle(group: string) {
+    setSelected((s) => (s.includes(group) ? s.filter((g) => g !== group) : [...s, group]))
+  }
+
+  return (
+    <div className="stack access-editor">
+      <h4>Access</h4>
+      {groups.data && groups.data.length === 0 && (
+        <p className="muted small">No groups exist yet — create one on the Access tab.</p>
+      )}
+      {groups.data && groups.data.length > 0 && (
+        <div className="pill-list">
+          {groups.data.map((g) => (
+            <label key={g} className={`pill pill--toggle${selected.includes(g) ? ' pill--on' : ''}`}>
+              <input type="checkbox" checked={selected.includes(g)} onChange={() => toggle(g)} />
+              {g}
+            </label>
+          ))}
+        </div>
+      )}
+      <p className="muted small">
+        {selected.length === 0
+          ? 'Visible to everyone in this tenant.'
+          : `Only retrievable by members of ${selected.join(', ')} (and admins).`}
+      </p>
+      <button
+        className="btn btn--sm"
+        disabled={!dirty || save.isPending}
+        onClick={() => save.mutate({ documentId, groups: selected })}
+      >
+        {save.isPending ? 'Saving…' : 'Save access & re-sync'}
+      </button>
     </div>
   )
 }

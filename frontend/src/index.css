@@ -171,3 +171,43 @@ body {
   opacity: 0.6;
   cursor: default;
 }
+
+/* auth ------------------------------------------------------- */
+
+.page--narrow {
+  max-width: 24rem;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 1.25rem;
+}
+
+.login h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.login input {
+  width: 100%;
+}
+
+.identity-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0.75rem 0 1rem;
+}
+
+.identity-bar__who {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.identity-bar button {
+  margin-left: auto;
+}

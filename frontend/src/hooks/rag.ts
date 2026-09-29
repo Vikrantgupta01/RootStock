@@ -9,12 +9,12 @@ import {
   type RagAnswer,
   type RagProfile,
 } from '../api/rag'
-import { useTenant } from './useTenant'
+import { useTenantId } from './useTenantId'
 
 // ---- queries --------------------------------------------------------------
 
 export function useDocuments() {
-  const tenant = useTenant()
+  const tenant = useTenantId()
   return useQuery({
     queryKey: ['rag', tenant, 'documents'],
     queryFn: () => rag.documents.list(),
@@ -22,7 +22,7 @@ export function useDocuments() {
 }
 
 export function useDocument(id: string | null) {
-  const tenant = useTenant()
+  const tenant = useTenantId()
   return useQuery({
     queryKey: ['rag', tenant, 'document', id],
     queryFn: () => rag.documents.get(id as string),
@@ -31,7 +31,7 @@ export function useDocument(id: string | null) {
 }
 
 export function useJobs(state: JobState | 'ALL' = 'ALL') {
-  const tenant = useTenant()
+  const tenant = useTenantId()
   return useQuery({
     queryKey: ['rag', tenant, 'jobs', state],
     queryFn: () => rag.jobs.list(state),
@@ -43,7 +43,7 @@ export function useJobs(state: JobState | 'ALL' = 'ALL') {
 }
 
 export function useProfiles() {
-  const tenant = useTenant()
+  const tenant = useTenantId()
   return useQuery({
     queryKey: ['rag', tenant, 'profiles'],
     queryFn: () => rag.profiles.list(),
@@ -51,7 +51,7 @@ export function useProfiles() {
 }
 
 export function useProfileVersions(id: string | null) {
-  const tenant = useTenant()
+  const tenant = useTenantId()
   return useQuery({
     queryKey: ['rag', tenant, 'profile-versions', id],
     queryFn: () => rag.profiles.versions(id as string),
@@ -63,7 +63,7 @@ export function useProfileVersions(id: string | null) {
 
 function useRagInvalidator() {
   const qc = useQueryClient()
-  const tenant = useTenant()
+  const tenant = useTenantId()
   return () => qc.invalidateQueries({ queryKey: ['rag', tenant] })
 }
 

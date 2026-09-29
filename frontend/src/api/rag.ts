@@ -1,7 +1,8 @@
-// Typed client for the RAG subsystem. Every call carries the X-Tenant-Id header.
+// Typed client for the RAG subsystem. Every call carries the signed-in user's
+// Cognito ID token; the backend derives the tenant from it.
 
 import { BASE_URL, request, toApiError, type ApiError } from './http'
-import { getTenant } from './tenant'
+import { authHeaders } from './session'
 
 // ---- types ------------------------------------------------------------------
 
@@ -37,6 +38,8 @@ export interface DocumentSummary {
   activeStatus: DocumentStatus | null
   createdAt: string
   updatedAt: string
+  /** Groups allowed to retrieve it; empty means everyone in the tenant. */
+  accessGroups: string[]
 }
 
 export interface DocumentDetail {
@@ -47,6 +50,8 @@ export interface DocumentDetail {
   activeVersionId: string | null
   createdAt: string
   updatedAt: string
+  /** Groups allowed to retrieve it; empty means everyone in the tenant. */
+  accessGroups: string[]
   versions: DocumentVersion[]
 }
 
@@ -133,7 +138,9 @@ function xhrUpload<T>(path: string, form: FormData, onProgress?: (fraction: numb
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${BASE_URL}${path}`)
-    xhr.setRequestHeader('X-Tenant-Id', getTenant())
+    for (const [name, value] of Object.entries(authHeaders())) {
+      xhr.setRequestHeader(name, value)
+    }
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total)
     }
@@ -158,14 +165,12 @@ function xhrUpload<T>(path: string, form: FormData, onProgress?: (fraction: numb
 
 // ---- API ----------------------------------------------------------------- -
 
-const t = { tenant: true } as const
-
 export const rag = {
   documents: {
     list: (pageNo = 0, size = 50) =>
-      request<Page<DocumentSummary>>(`/api/rag/documents?page=${pageNo}&size=${size}`, {}, t),
+      request<Page<DocumentSummary>>(`/api/rag/documents?page=${pageNo}&size=${size}`),
 
-    get: (id: string) => request<DocumentDetail>(`/api/rag/documents/${id}`, {}, t),
+    get: (id: string) => request<DocumentDetail>(`/api/rag/documents/${id}`),
 
     upload: (
       file: File,
@@ -185,19 +190,19 @@ export const rag = {
     },
 
     activateVersion: (id: string, versionNo: number) =>
-      request<DocumentDetail>(`/api/rag/documents/${id}/versions/${versionNo}/activate`, { method: 'POST' }, t),
+      request<DocumentDetail>(`/api/rag/documents/${id}/versions/${versionNo}/activate`, { method: 'POST' }),
 
     reindexVersion: (id: string, versionNo: number) =>
-      request<DocumentVersion>(`/api/rag/documents/${id}/versions/${versionNo}/reindex`, { method: 'POST' }, t),
+      request<DocumentVersion>(`/api/rag/documents/${id}/versions/${versionNo}/reindex`, { method: 'POST' }),
 
-    remove: (id: string) => request<void>(`/api/rag/documents/${id}`, { method: 'DELETE' }, t),
+    remove: (id: string) => request<void>(`/api/rag/documents/${id}`, { method: 'DELETE' }),
 
     removeVersion: (id: string, versionNo: number) =>
-      request<void>(`/api/rag/documents/${id}/versions/${versionNo}`, { method: 'DELETE' }, t),
+      request<void>(`/api/rag/documents/${id}/versions/${versionNo}`, { method: 'DELETE' }),
 
     download: async (id: string, versionNo: number, filename: string) => {
       const res = await fetch(`${BASE_URL}/api/rag/documents/${id}/versions/${versionNo}/content`, {
-        headers: { 'X-Tenant-Id': getTenant() },
+        headers: authHeaders(),
       })
       if (!res.ok) throw await toApiError(res)
       const blob = await res.blob()
@@ -213,22 +218,37 @@ export const rag = {
   jobs: {
     list: (state: JobState | 'ALL' = 'ALL', pageNo = 0, size = 50) => {
       const q = state === 'ALL' ? '' : `&state=${state}`
-      return request<Page<IngestionJob>>(`/api/rag/jobs?page=${pageNo}&size=${size}${q}`, {}, t)
+      return request<Page<IngestionJob>>(`/api/rag/jobs?page=${pageNo}&size=${size}${q}`)
     },
   },
 
   profiles: {
-    list: () => request<RagProfile[]>('/api/rag/profiles', {}, t),
-    get: (id: string) => request<RagProfile>(`/api/rag/profiles/${id}`, {}, t),
-    versions: (id: string) => request<RagProfile[]>(`/api/rag/profiles/${id}/versions`, {}, t),
+    list: () => request<RagProfile[]>('/api/rag/profiles'),
+    get: (id: string) => request<RagProfile>(`/api/rag/profiles/${id}`),
+    versions: (id: string) => request<RagProfile[]>(`/api/rag/profiles/${id}/versions`),
     create: (body: ProfileCreate) =>
-      request<RagProfile>('/api/rag/profiles', { method: 'POST', body: JSON.stringify(body) }, t),
+      request<RagProfile>('/api/rag/profiles', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: ProfileUpdate) =>
-      request<RagProfile>(`/api/rag/profiles/${id}/versions`, { method: 'POST', body: JSON.stringify(body) }, t),
+      request<RagProfile>(`/api/rag/profiles/${id}/versions`, { method: 'POST', body: JSON.stringify(body) }),
     activate: (id: string) =>
-      request<RagProfile>(`/api/rag/profiles/${id}/activate`, { method: 'POST' }, t),
+      request<RagProfile>(`/api/rag/profiles/${id}/activate`, { method: 'POST' }),
+  },
+
+  accessGroups: {
+    list: () => request<string[]>('/api/rag/access-groups'),
+    create: (name: string, description?: string) =>
+      request<{ name: string }>('/api/rag/access-groups', {
+        method: 'POST',
+        body: JSON.stringify({ name, description }),
+      }),
+    /** Replaces a document's grants; an empty list makes it visible tenant-wide again. */
+    setForDocument: (documentId: string, groups: string[]) =>
+      request<DocumentDetail>(`/api/rag/documents/${documentId}/access-groups`, {
+        method: 'PUT',
+        body: JSON.stringify({ groups }),
+      }),
   },
 
   query: (body: QueryRequest) =>
-    request<RagAnswer>('/api/rag/query', { method: 'POST', body: JSON.stringify(body) }, t),
+    request<RagAnswer>('/api/rag/query', { method: 'POST', body: JSON.stringify(body) }),
 }

@@ -1,19 +1,26 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getTenant, setTenant } from '../api/tenant'
+import { AccessTab } from '../components/rag/AccessTab'
 import { ActivityTab } from '../components/rag/ActivityTab'
 import { DocumentsTab } from '../components/rag/DocumentsTab'
 import { HealthBadge } from '../components/HealthBadge'
+import { IdentityBar } from '../components/IdentityBar'
 import { PlaygroundTab } from '../components/rag/PlaygroundTab'
 import { TuningTab } from '../components/rag/TuningTab'
-import { useTenant } from '../hooks/useTenant'
+import { hasRole, useCurrentUser } from '../hooks/useSession'
 import './KnowledgePage.css'
 
-const TABS = ['Documents', 'Tuning', 'Playground', 'Activity'] as const
-type Tab = (typeof TABS)[number]
+const ALL_TABS = ['Documents', 'Tuning', 'Access', 'Playground', 'Activity'] as const
+type Tab = (typeof ALL_TABS)[number]
+
+/** Tuning and Access change what everyone else sees, so both are admin-only. */
+const ADMIN_ONLY: Tab[] = ['Tuning', 'Access']
 
 export function KnowledgePage() {
-  const tenant = useTenant()
+  const user = useCurrentUser()
+  const isAdmin = hasRole(user.data, 'ADMIN')
+  const tabs = ALL_TABS.filter((t) => isAdmin || !ADMIN_ONLY.includes(t))
+
   const [tab, setTab] = useState<Tab>(() => {
     try {
       return (localStorage.getItem('rootstock.kb.tab') as Tab) || 'Documents'
@@ -21,7 +28,9 @@ export function KnowledgePage() {
       return 'Documents'
     }
   })
-  const [tenantDraft, setTenantDraft] = useState(getTenant())
+  // A remembered tab the current user isn't allowed to open falls back rather
+  // than rendering a pane whose every request would 403.
+  const current: Tab = tabs.includes(tab) ? tab : 'Documents'
 
   function selectTab(t: Tab) {
     setTab(t)
@@ -44,36 +53,22 @@ export function KnowledgePage() {
         <HealthBadge />
       </header>
 
-      <form
-        className="tenant-bar"
-        onSubmit={(e) => {
-          e.preventDefault()
-          setTenant(tenantDraft)
-        }}
-      >
-        <label>
-          Tenant
-          <input value={tenantDraft} onChange={(e) => setTenantDraft(e.target.value)} placeholder="default" />
-        </label>
-        <button className="btn btn--sm" type="submit" disabled={tenantDraft.trim() === tenant}>
-          switch
-        </button>
-        <span className="muted small">sent as the X-Tenant-Id header</span>
-      </form>
+      <IdentityBar />
 
       <nav className="tabs">
-        {TABS.map((t) => (
-          <button key={t} className={`tab${tab === t ? ' tab--on' : ''}`} onClick={() => selectTab(t)}>
+        {tabs.map((t) => (
+          <button key={t} className={`tab${current === t ? ' tab--on' : ''}`} onClick={() => selectTab(t)}>
             {t}
           </button>
         ))}
       </nav>
 
       <section className="tabpane">
-        {tab === 'Documents' && <DocumentsTab />}
-        {tab === 'Tuning' && <TuningTab />}
-        {tab === 'Playground' && <PlaygroundTab />}
-        {tab === 'Activity' && <ActivityTab />}
+        {current === 'Documents' && <DocumentsTab />}
+        {current === 'Tuning' && <TuningTab />}
+        {current === 'Access' && <AccessTab />}
+        {current === 'Playground' && <PlaygroundTab />}
+        {current === 'Activity' && <ActivityTab />}
       </section>
     </main>
   )
