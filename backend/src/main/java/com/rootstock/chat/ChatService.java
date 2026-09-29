@@ -3,7 +3,9 @@ package com.rootstock.chat;
 import com.rootstock.config.RootStockProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import java.util.List;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -35,10 +37,15 @@ public class ChatService {
 		this.properties = properties;
 	}
 
-	public String reply(String message) {
+	/**
+	 * Answers {@code message} in the context of {@code history} -- the earlier
+	 * turns of the same conversation, oldest first. An empty history is a fresh
+	 * conversation, which is what every request used to be.
+	 */
+	public String reply(List<Message> history, String message) {
 		ChatClient client = client();
 		try {
-			return client.prompt().user(message).call().content();
+			return client.prompt().messages(history).user(message).call().content();
 		}
 		catch (RuntimeException ex) {
 			log.error("Chat request to the AI provider failed", ex);
@@ -46,8 +53,8 @@ public class ChatService {
 		}
 	}
 
-	public Flux<String> replyStream(String message) {
-		return client().prompt().user(message).stream().content();
+	public Flux<String> replyStream(List<Message> history, String message) {
+		return client().prompt().messages(history).user(message).stream().content();
 	}
 
 	/**
@@ -55,9 +62,14 @@ public class ChatService {
 	 * RAG, which composes its own context-grounded prompt per profile).
 	 */
 	public String generate(String systemPrompt, String userPrompt) {
+		return generate(systemPrompt, List.of(), userPrompt);
+	}
+
+	/** As above, with the earlier turns of the same conversation (oldest first). */
+	public String generate(String systemPrompt, List<Message> history, String userPrompt) {
 		ChatClient client = bareClient();
 		try {
-			return client.prompt().system(systemPrompt).user(userPrompt).call().content();
+			return client.prompt().system(systemPrompt).messages(history).user(userPrompt).call().content();
 		}
 		catch (RuntimeException ex) {
 			log.error("Chat request to the AI provider failed", ex);

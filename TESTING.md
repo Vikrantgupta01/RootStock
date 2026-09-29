@@ -17,7 +17,7 @@ cd frontend && npm run build && npm run lint
   they mock, so there'd be nothing to enforce.
 - Integration tests (`RootStockApplicationTests`, `CustomerRepositoryTest`,
   `RagIngestionIntegrationTest`, `RagQueryIntegrationTest`,
-  `RagAccessControlIntegrationTest`) run against a
+  `RagAccessControlIntegrationTest`, `ConversationIntegrationTest`) run against a
   Testcontainers Postgres (app bookkeeping only — no vector data lives there;
   that's Bedrock's Aurora) and **skip automatically** when Docker isn't
   running.
@@ -34,6 +34,10 @@ cd frontend && npm run build && npm run lint
   requests take the same path through the filter chain without a network call.
   The group boundary itself is enforced inside Bedrock, which is mocked — see
   §4 for the live pass.
+- `ConversationIntegrationTest` stubs a chat model that *records every prompt*,
+  which is the only way to tell "the history was loaded" from "the history was
+  loaded and then not sent" — the reply alone looks the same either way. It also
+  covers thread ownership and the chat/RAG kind boundary.
 
 ## 2. One-time AWS setup (required — there's no offline mode)
 
@@ -137,6 +141,32 @@ curl -s "${H[@]}" "$B/profiles" | python3 -m json.tool
 curl -s "${H[@]}" -H 'Content-Type: application/json' \
   -d '{"question":"how long is the warranty?","similarityThreshold":0}' $B/query
 ```
+
+**Conversation memory**: ask a question, then send the `conversationId` from the
+response back with a follow-up that can't stand on its own:
+
+```bash
+curl -s "${H[@]}" -H 'Content-Type: application/json' \
+  -d '{"question":"What is the 2026 salary review budget cap?"}' $B/query
+# take conversationId from that response
+curl -s "${H[@]}" -H 'Content-Type: application/json' \
+  -d '{"question":"Which document said that?","conversationId":"<id>"}' $B/query
+```
+
+The second response's `retrievalQuery` should come back *rewritten* into a
+standalone question carrying the entity from turn one — that rewrite is the
+whole point, since similarity search can't resolve "that" on its own. Then
+`GET $B/conversations` lists your threads and `GET $B/conversations/<id>`
+returns the stored transcript. The same works on `/api/chat`, where the plainest
+check is to state a fact in one turn and ask for it back in the next.
+
+> With only a handful of documents indexed, retrieval returns nearly everything
+> regardless, so a *failing* rewrite can still look like it worked. Judge it by
+> `retrievalQuery`, not by whether the answer happened to be right.
+
+**Conversation isolation**: a second user in the same tenant gets 404 for
+another person's `conversationId`, on both the transcript and a follow-up —
+chat has no sharing model. A RAG thread id sent to `/api/chat` is a 400.
 
 **Versioning & rollback**: re-`POST` the same file to create a new version, then
 `POST /documents/{id}/versions/{n}/activate` to switch which one serves queries.

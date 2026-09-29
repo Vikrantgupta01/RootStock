@@ -1,4 +1,6 @@
 package com.rootstock.chat.dto;
 
-public record ChatResponse(String reply) {
+import java.util.UUID;
+
+public record ChatResponse(String reply, UUID conversationId) {
 }

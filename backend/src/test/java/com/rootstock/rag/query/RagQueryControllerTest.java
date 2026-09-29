@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.rootstock.chat.AiUnavailableException;
 import com.rootstock.common.GlobalExceptionHandler;
+import com.rootstock.conversation.ConversationService;
 import com.rootstock.rag.query.dto.Citation;
 import com.rootstock.rag.query.dto.RagQueryResponse;
 import java.util.List;
@@ -36,12 +37,16 @@ class RagQueryControllerTest {
 	@MockitoBean
 	RagQueryService service;
 
+	@MockitoBean
+	ConversationService conversations;
+
 	@Test
 	void returnsAnswerWithCitations() throws Exception {
 		UUID docId = UUID.randomUUID();
 		RagQueryResponse response = new RagQueryResponse(
 				"Refunds are available within 14 days [1].", true,
 				List.of(new Citation(1, docId, "policy.txt", "policy.txt", 1, 0, 0.82, "refunds within 14 days")),
+				UUID.randomUUID(), "refund policy?",
 				UUID.randomUUID(), "default", 1, List.of(UUID.randomUUID()));
 		given(service.query(any())).willReturn(response);
 

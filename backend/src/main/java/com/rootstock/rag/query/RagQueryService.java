@@ -2,6 +2,11 @@ package com.rootstock.rag.query;
 
 import com.rootstock.auth.AuthContext;
 import com.rootstock.chat.ChatService;
+import com.rootstock.conversation.ChatMessage;
+import com.rootstock.conversation.Conversation;
+import com.rootstock.conversation.ConversationKind;
+import com.rootstock.conversation.ConversationService;
+import com.rootstock.conversation.MessageRole;
 import com.rootstock.rag.RagProperties;
 import com.rootstock.rag.document.ActiveVersionResolver;
 import com.rootstock.rag.document.Document;
@@ -38,6 +43,20 @@ public class RagQueryService {
 	private static final String SYSTEM_PROMPT =
 			"You are a precise retrieval-augmented assistant. Answer only from the provided context. "
 					+ "Cite supporting passages inline as [n]. If the context does not contain the answer, say so.";
+	/**
+	 * Retrieval is a similarity search over chunks, so it only ever sees the text
+	 * it is given -- "and what about its price?" matches nothing, because the
+	 * thing being priced is in an earlier turn, not in the query. This rewrites
+	 * such a follow-up into a query that stands on its own before anything is
+	 * retrieved.
+	 */
+	private static final String CONDENSE_SYSTEM =
+			"You rewrite a follow-up message into one standalone question for a document search. "
+					+ "Resolve every pronoun and implicit reference using the conversation. "
+					+ "Keep names, numbers, product terms and the original wording exactly as written. "
+					+ "Reply with the rewritten question and nothing else -- no preamble, no quotes, no "
+					+ "explanation. If the message already stands on its own, reply with it unchanged.";
+
 	private static final int SNIPPET_CHARS = 240;
 
 	private final RagProfileService profiles;
@@ -47,10 +66,12 @@ public class RagQueryService {
 	private final ChatService chatService;
 	private final DocumentRepository documents;
 	private final DocumentVersionRepository versions;
+	private final ConversationService conversations;
 
 	public RagQueryService(RagProfileService profiles, ActiveVersionResolver activeVersions,
 			BedrockKnowledgeBaseClient kb, RagProperties properties, ChatService chatService,
-			DocumentRepository documents, DocumentVersionRepository versions) {
+			DocumentRepository documents, DocumentVersionRepository versions,
+			ConversationService conversations) {
 		this.profiles = profiles;
 		this.activeVersions = activeVersions;
 		this.kb = kb;
@@ -58,6 +79,7 @@ public class RagQueryService {
 		this.chatService = chatService;
 		this.documents = documents;
 		this.versions = versions;
+		this.conversations = conversations;
 	}
 
 	public RagQueryResponse query(RagQueryRequest request) {
@@ -66,12 +88,21 @@ public class RagQueryService {
 				? profiles.get(request.profileId())
 				: profiles.activeProfile(tenantId);
 
+		Conversation conversation = conversations.resolve(
+				request.conversationId(), ConversationKind.RAG, request.question());
+		List<ChatMessage> history = conversations.history(conversation.getId());
+
 		List<DocumentVersion> active = activeVersions.activeIndexed(tenantId);
 		List<UUID> usedVersionIds = active.stream().map(DocumentVersion::getId).toList();
 		if (active.isEmpty()) {
-			return ungrounded(profile, usedVersionIds,
-					"There are no indexed documents in this knowledge base yet.");
+			return finish(conversation, request.question(), ungrounded(profile, conversation, request.question(),
+					usedVersionIds, "There are no indexed documents in this knowledge base yet."));
 		}
+
+		// Rewritten before retrieval, not after: the filter and the similarity
+		// search both run against this text, so a follow-up that still says "it"
+		// would search for the wrong thing.
+		String retrievalQuery = condense(history, request.question());
 
 		int topK = request.topK() != null ? request.topK() : profile.getTopK();
 		double threshold = request.similarityThreshold() != null
@@ -86,7 +117,7 @@ public class RagQueryService {
 				AuthContext.retrievalGroupsOrNull());
 		String rerankerModelArn = rerankerModelArn(profile);
 		List<KnowledgeBaseRetrievalResult> rawHits = kb.retrieve(
-				properties.bedrock().knowledgeBaseId(), request.question(), topK, filter, rerankerModelArn);
+				properties.bedrock().knowledgeBaseId(), retrievalQuery, topK, filter, rerankerModelArn);
 		// similarityThreshold is calibrated for raw cosine similarity. Once a
 		// reranker scores these, "score" means a relevance score on Cohere's own
 		// scale instead -- routinely well under 0.5 for a genuinely correct match
@@ -98,18 +129,54 @@ public class RagQueryService {
 				? rawHits
 				: rawHits.stream().filter(h -> h.score() == null || h.score() >= threshold).toList();
 		if (hits.isEmpty()) {
-			return ungrounded(profile, usedVersionIds,
-					"I couldn't find anything relevant to that question in the knowledge base.");
+			return finish(conversation, request.question(), ungrounded(profile, conversation, retrievalQuery,
+					usedVersionIds, "I couldn't find anything relevant to that question in the knowledge base."));
 		}
 
 		List<Citation> citations = toCitations(tenantId, hits);
+		// The template still gets the question as asked, not the rewrite: the
+		// rewrite exists to retrieve well, while the answer should address what
+		// the person actually typed. The earlier turns come along so the reply
+		// reads as part of the conversation.
 		String prompt = profile.getPromptTemplate()
 				.replace("{context}", renderContext(hits, citations))
 				.replace("{question}", request.question());
-		String answer = chatService.generate(SYSTEM_PROMPT, prompt);
+		String answer = chatService.generate(
+				SYSTEM_PROMPT, ConversationService.toPromptMessages(history), prompt);
 
-		return new RagQueryResponse(answer, true, citations, profile.getId(), profile.getName(),
-				profile.getVersionNo(), usedVersionIds);
+		return finish(conversation, request.question(),
+				new RagQueryResponse(answer, true, citations, conversation.getId(), retrievalQuery,
+						profile.getId(), profile.getName(), profile.getVersionNo(), usedVersionIds));
+	}
+
+	/**
+	 * Records the exchange before handing the answer back, including the ones
+	 * that found nothing -- "I couldn't find that" is real context for whatever
+	 * the person asks next, and a thread with holes in it condenses badly.
+	 */
+	private RagQueryResponse finish(Conversation conversation, String question, RagQueryResponse response) {
+		conversations.append(conversation, question, response.answer());
+		return response;
+	}
+
+	/** @return a standalone version of {@code question}, or it unchanged when the thread is new. */
+	private String condense(List<ChatMessage> history, String question) {
+		if (history.isEmpty()) {
+			return question;
+		}
+		StringBuilder transcript = new StringBuilder();
+		for (ChatMessage message : history) {
+			transcript.append(message.getRole() == MessageRole.USER ? "User: " : "Assistant: ")
+					.append(message.getContent()).append('\n');
+		}
+		String rewritten = chatService.generate(CONDENSE_SYSTEM,
+				"Conversation so far:\n" + transcript + "\nFollow-up message: " + question);
+		// A rewrite that came back empty, or that ran away into prose, is worse
+		// than no rewrite at all -- fall back to what was actually asked.
+		if (rewritten == null || rewritten.isBlank() || rewritten.length() > question.length() * 4 + 200) {
+			return question;
+		}
+		return rewritten.strip();
 	}
 
 	private String rerankerModelArn(RagProfile profile) {
@@ -119,9 +186,10 @@ public class RagQueryService {
 		return "arn:aws:bedrock:" + properties.bedrock().region() + "::foundation-model/" + profile.getRerankerModel();
 	}
 
-	private RagQueryResponse ungrounded(RagProfile profile, List<UUID> usedVersionIds, String answer) {
-		return new RagQueryResponse(answer, false, List.of(), profile.getId(), profile.getName(),
-				profile.getVersionNo(), usedVersionIds);
+	private RagQueryResponse ungrounded(RagProfile profile, Conversation conversation, String retrievalQuery,
+			List<UUID> usedVersionIds, String answer) {
+		return new RagQueryResponse(answer, false, List.of(), conversation.getId(), retrievalQuery,
+				profile.getId(), profile.getName(), profile.getVersionNo(), usedVersionIds);
 	}
 
 	private String renderContext(List<KnowledgeBaseRetrievalResult> hits, List<Citation> citations) {

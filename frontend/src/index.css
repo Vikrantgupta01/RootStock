@@ -211,3 +211,17 @@ body {
 .identity-bar button {
   margin-left: auto;
 }
+
+/* conversation picker ---------------------------------------- */
+
+.chat__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.chat__bar select {
+  flex: 1;
+  min-width: 0;
+}

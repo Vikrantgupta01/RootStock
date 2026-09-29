@@ -53,7 +53,9 @@ cd backend
 - `GET  http://localhost:8080/api/health` → `{ "status": "UP", ... }`
 - `GET  http://localhost:8080/actuator/health`
 - `POST http://localhost:8080/api/chat` with `{ "message": "hello" }` →
-  `{ "reply": "..." }` (503 with a clear message until AWS Bedrock is configured)
+  `{ "reply": "...", "conversationId": "..." }` (503 with a clear message until
+  AWS Bedrock is configured). Send that `conversationId` back to continue the
+  thread — see [Conversations](#conversations).
 - `POST http://localhost:8080/api/chat` with `Accept: text/event-stream` → token stream
 
 ### 3. Frontend
@@ -160,6 +162,40 @@ admin-create-user` + `admin-set-user-password` (setting `custom:tenant_id` and
 `custom:role=ADMIN`), gated by IAM rather than by this application. There is no
 self-service sign-up.
 
+## Conversations
+
+Both `/api/chat` and `/api/rag/query` are conversational. Send the
+`conversationId` from a response back with the next message to continue the
+thread; omit it to start a new one. History is **stored server-side** (the
+`conversation` and `chat_message` tables), so it survives a page refresh, a
+restart and more than one instance — and can't be rewritten by whoever holds
+the token, which a client-supplied transcript could be.
+
+A thread belongs to one person: every lookup is by (id, tenant, Cognito `sub`)
+together, so an id from somewhere else resolves to a 404 rather than to someone
+else's conversation. Chat and RAG threads are kept apart — they answer under
+different prompts, so continuing one as the other is a 400.
+
+- `GET /api/chat/conversations`, `GET /api/rag/conversations` — your threads,
+  newest activity first, titled from their opening message.
+- `GET …/conversations/{id}` — the stored transcript.
+- `DELETE …/conversations/{id}` — messages cascade.
+
+**Only the last 20 turns** ride along with a new message
+(`ConversationService.HISTORY_TURNS`). That's a cost and context-window bound,
+not a nicety: every turn is re-sent on every request and Bedrock charges for all
+of it. The cut always lands on a turn boundary, so the model never sees an
+answer whose question was dropped.
+
+**RAG follow-ups get rewritten before retrieval.** Similarity search only sees
+the text it's given, so *"and what about its price?"* would match nothing —
+the thing being priced is in an earlier turn. A condense step turns the
+follow-up into a standalone query first, and the response's `retrievalQuery`
+says what was actually searched for, so the rewrite is inspectable rather than
+invisible. It costs one extra model call per follow-up, and none on the first
+message of a thread. The answer is still generated against the question as
+typed; only retrieval uses the rewrite.
+
 ## Knowledge base / RAG
 
 Tenant-scoped document ingestion + retrieval, backed entirely by an **AWS
@@ -202,11 +238,14 @@ and optional reranking.
   there's no re-indexing to wait for anymore since a profile no longer
   controls how documents are chunked/embedded.
 
-**Query** — `POST /api/rag/query` `{ question, profileId?, topK?, similarityThreshold? }`
-→ `{ answer, grounded, citations[], profileId, … }`. Calls Bedrock's `Retrieve`
-API (filtered to the tenant's active document versions, optionally reranked —
-see the profile's reranker settings), grounds the profile's prompt template in
-the results, and answers via the Bedrock chat model.
+**Query** — `POST /api/rag/query`
+`{ question, conversationId?, profileId?, topK?, similarityThreshold? }`
+→ `{ answer, grounded, citations[], conversationId, retrievalQuery, profileId, … }`.
+Calls Bedrock's `Retrieve` API (filtered to the tenant's active document
+versions and the caller's access groups, optionally reranked — see the profile's
+reranker settings), grounds the profile's prompt template in the results, and
+answers via the Bedrock chat model. Follow-ups are supported — see
+[Conversations](#conversations).
 
 Config (`rootstock.rag.*` in `application.yml`, all env-overridable — see the
 Configuration table above for the Bedrock/blob-store keys):
@@ -263,3 +302,7 @@ walkthrough (API + UI) of the Customer and RAG features.
 SSO/federation to an enterprise IdP, password reset, MFA, audit logging (all
 Cognito configuration layered onto what's here rather than rewrites), CI,
 deployment manifests, and Bedrock model fine-tuning. Each is its own follow-up.
+
+Conversation history is capped by turn count rather than tokens, and old threads
+are never pruned — both fine at this size, both worth revisiting before real
+traffic.

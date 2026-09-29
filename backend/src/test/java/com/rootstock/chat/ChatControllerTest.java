@@ -1,5 +1,6 @@
 package com.rootstock.chat;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -7,6 +8,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.rootstock.common.GlobalExceptionHandler;
+import com.rootstock.conversation.Conversation;
+import com.rootstock.conversation.ConversationKind;
+import com.rootstock.conversation.ConversationService;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -31,9 +37,19 @@ class ChatControllerTest {
 	@MockitoBean
 	ChatService chatService;
 
+	@MockitoBean
+	ConversationService conversations;
+
+	@BeforeEach
+	void stubConversation() {
+		given(conversations.resolve(any(), any(), any()))
+				.willReturn(new Conversation("t", "u", ConversationKind.CHAT, "hello"));
+		given(conversations.history(any())).willReturn(List.of());
+	}
+
 	@Test
 	void returnsReplyForValidRequest() throws Exception {
-		given(chatService.reply(eq("hello"))).willReturn("hi there");
+		given(chatService.reply(any(), eq("hello"))).willReturn("hi there");
 
 		mockMvc.perform(post("/api/chat")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -52,7 +68,7 @@ class ChatControllerTest {
 
 	@Test
 	void returns503WhenAiUnavailable() throws Exception {
-		given(chatService.reply(eq("hello")))
+		given(chatService.reply(any(), eq("hello")))
 				.willThrow(new AiUnavailableException("no backend"));
 
 		mockMvc.perform(post("/api/chat")

@@ -2,6 +2,7 @@
 // Cognito ID token; the backend derives the tenant from it.
 
 import type { Role } from './auth'
+import { conversations } from './conversation'
 import { BASE_URL, request, toApiError, type ApiError } from './http'
 import { authHeaders } from './session'
 
@@ -120,6 +121,9 @@ export interface RagAnswer {
   answer: string
   grounded: boolean
   citations: Citation[]
+  conversationId: string
+  /** What was actually searched for -- differs when a follow-up had to be rewritten. */
+  retrievalQuery: string
   profileId: string
   profileName: string
   profileVersionNo: number
@@ -141,6 +145,8 @@ export interface CreatedUser {
 
 export interface QueryRequest {
   question: string
+  /** Continue a thread so follow-ups can refer back; omit to ask standalone. */
+  conversationId?: string | null
   profileId?: string | null
   topK?: number | null
   similarityThreshold?: number | null
@@ -268,6 +274,8 @@ export const rag = {
         body: JSON.stringify({ groups }),
       }),
   },
+
+  conversations: conversations('/api/rag'),
 
   query: (body: QueryRequest) =>
     request<RagAnswer>('/api/rag/query', { method: 'POST', body: JSON.stringify(body) }),

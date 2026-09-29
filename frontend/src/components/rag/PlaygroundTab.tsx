@@ -5,6 +5,10 @@ export function PlaygroundTab() {
   const profiles = useProfiles()
   const query = useRagQuery()
 
+  // Follow-ups go back into the same thread, so "and what about its price?"
+  // resolves against what was already asked. Kept in state only -- the history
+  // itself lives on the server.
+  const [conversationId, setConversationId] = useState<string | null>(null)
   const [question, setQuestion] = useState('')
   const [profileId, setProfileId] = useState<string>('')
   const [override, setOverride] = useState(false)
@@ -13,15 +17,23 @@ export function PlaygroundTab() {
 
   function ask() {
     if (!question.trim()) return
-    query.mutate({
-      question: question.trim(),
-      profileId: profileId || null,
-      topK: override ? topK : null,
-      similarityThreshold: override ? threshold : null,
-    })
+    query.mutate(
+      {
+        question: question.trim(),
+        conversationId,
+        profileId: profileId || null,
+        topK: override ? topK : null,
+        similarityThreshold: override ? threshold : null,
+      },
+      { onSuccess: (res) => setConversationId(res.conversationId) },
+    )
+    setQuestion('')
   }
 
   const answer = query.data
+  // Only worth showing when the rewrite changed something -- which only happens
+  // on a follow-up that couldn't stand on its own.
+  const lastAsked = query.variables?.question
 
   return (
     <div className="playground">
@@ -41,6 +53,11 @@ export function PlaygroundTab() {
           <input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} />
           override retrieval
         </label>
+        {conversationId && (
+          <button className="btn btn--ghost btn--sm" onClick={() => setConversationId(null)}>
+            new thread
+          </button>
+        )}
         {override && (
           <>
             <label className="inline-range">
@@ -98,6 +115,11 @@ export function PlaygroundTab() {
               version(s)
             </span>
           </div>
+          {answer.retrievalQuery !== lastAsked && (
+            <p className="muted small">
+              Searched for: <em>{answer.retrievalQuery}</em>
+            </p>
+          )}
           <p className="answer__text">{answer.answer}</p>
 
           {answer.citations.length > 0 && (

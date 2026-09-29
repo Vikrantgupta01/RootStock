@@ -12,9 +12,14 @@ import java.util.UUID;
  * A retrieval-augmented question. {@code profileId} defaults to the active
  * profile; {@code topK} / {@code similarityThreshold} override the profile's
  * values for this call only.
+ *
+ * @param conversationId the thread to continue, so follow-ups can refer back to
+ *                       earlier turns; {@code null} asks a standalone question
+ *                       and starts a new thread
  */
 public record RagQueryRequest(
 		@NotBlank @Size(max = 4000) String question,
+		UUID conversationId,
 		UUID profileId,
 		@Min(1) @Max(50) Integer topK,
 		@DecimalMin("0.0") @DecimalMax("1.0") Double similarityThreshold) {
