@@ -96,11 +96,64 @@ Backend config lives in `backend/src/main/resources/application.yml`. Key knobs
 > `filesystem` backend still exists for unit tests, but documents written
 > there are invisible to Bedrock and will never actually get indexed).
 
+## Authentication
+
+Every `/api/**` route needs a valid **AWS Cognito ID token** as
+`Authorization: Bearer <token>`. The only exceptions are `POST /api/auth/login`,
+`POST /api/auth/refresh` and `GET /api/health` (liveness, so the UI can tell
+"backend down" from "not signed in").
+
+- `POST /api/auth/login` `{email, password}` → the backend calls Cognito's
+  `InitiateAuth` server-side and returns Cognito's own tokens. The frontend
+  never talks to AWS directly and holds no AWS credentials.
+- `POST /api/auth/refresh` `{refreshToken}` → a fresh ID token.
+- `GET /api/auth/me` → the caller's id, email, tenant, role and groups, as the
+  verified token describes them. This is what the UI gates itself on.
+
+Tokens are validated against the user pool's JWKS and pinned three ways: to the
+pool (`iss`), to this app client (`aud`), and to **ID** tokens (`token_use`).
+The last one matters — Cognito signs access tokens with the same keys, and on
+this pool's plan an access token carries neither `custom:tenant_id` nor
+`custom:role`, so accepting one would authenticate a tenantless request.
+
+**Roles** (the `custom:role` attribute, mapped to a Spring Security authority):
+
+| Role | Can |
+| --- | --- |
+| `VIEWER` | query, browse documents, download |
+| `EDITOR` | + upload, add versions, reindex, delete |
+| `ADMIN` | + profile tuning, group and document-access management; sees every document in the tenant regardless of access groups |
+
+**Access groups** (Cognito groups, arriving as the `cognito:groups` claim)
+decide what a caller can *see* rather than what they can *do*. A document
+tagged with one or more groups is only retrievable by their members; a document
+with no tags carries a synthetic `__public__` group every caller also carries,
+so it stays visible tenant-wide. Enforcement is a `listContains` clause ANDed
+into the Bedrock `Retrieve` filter, applied server-side by Bedrock — an
+excluded chunk is never returned, so the chat model never sees it and there is
+nothing to leak through the answer.
+
+Changing a document's grants (`PUT /api/rag/documents/{id}/access-groups`)
+rewrites the S3 `.metadata.json` sidecar and queues a re-sync, because Bedrock
+filters on its own copy of the grants and only re-reads it on the next
+ingestion job. **Until that job finishes, the previous grants still apply.**
+
+Configuration (`rootstock.auth.cognito.*`, all overridable by env var):
+`region`/`AWS_REGION`, `user-pool-id`/`COGNITO_USER_POOL_ID`,
+`client-id`/`COGNITO_CLIENT_ID`. These are public OIDC identifiers, not
+secrets. The app's IAM identity needs `cognito-idp:InitiateAuth` plus the
+group-admin actions (`CreateGroup`, `ListGroups`, `AdminAddUserToGroup`,
+`AdminRemoveUserFromGroup`), scoped to that one pool.
+
+Seed the first admin with the AWS CLI (`admin-create-user` +
+`admin-set-user-password`, setting `custom:tenant_id` and `custom:role=ADMIN`)
+— there's no self-service sign-up.
+
 ## Knowledge base / RAG
 
 Tenant-scoped document ingestion + retrieval, backed entirely by an **AWS
-Bedrock Knowledge Base**. Tenant comes from the `X-Tenant-Id` header (`default`
-if absent) — a stub until real auth lands.
+Bedrock Knowledge Base**. Tenant, role and group membership come from the
+signed-in user's Cognito ID token — see [Authentication](#authentication).
 
 This app is a thin control plane around Bedrock, not a vector database itself:
 parsing, chunking, embedding, storage, and similarity search all happen inside
@@ -164,8 +217,10 @@ Configuration table above for the Bedrock/blob-store keys):
   chips; optional top-k / threshold overrides.
 - **Activity** tab — the ingestion job feed, auto-refreshing while work is queued.
 
-A **Tenant** field in the header sets the `X-Tenant-Id` header for every request
-(stored in `localStorage`).
+The header shows who you are signed in as (email, role, tenant, groups) and a
+sign-out button. The tenant is no longer typed in — it comes from the token.
+Viewers don't see the upload dropzone or the version actions; only admins see
+the **Tuning** and **Access** tabs.
 
 ## Roadmap
 
@@ -194,5 +249,6 @@ walkthrough (API + UI) of the Customer and RAG features.
 
 ## Not yet included
 
-Authentication/authorization (tenant is a header stub), CI, deployment
-manifests, and Bedrock model fine-tuning. Each is its own follow-up.
+SSO/federation to an enterprise IdP, password reset, MFA, audit logging (all
+Cognito configuration layered onto what's here rather than rewrites), CI,
+deployment manifests, and Bedrock model fine-tuning. Each is its own follow-up.

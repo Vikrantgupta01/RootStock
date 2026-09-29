@@ -11,18 +11,29 @@ cd backend  && ./mvnw test          # unit + slice + integration tests
 cd frontend && npm run build && npm run lint
 ```
 
-- Controller slice tests (`*ControllerTest`) need neither Docker nor AWS.
+- Controller slice tests (`*ControllerTest`) need neither Docker nor AWS. They
+  run with the security filter chain switched off (`addFilters = false`): it
+  isn't in a `@WebMvcTest` context, and `@PreAuthorize` sits on the services
+  they mock, so there'd be nothing to enforce.
 - Integration tests (`RootStockApplicationTests`, `CustomerRepositoryTest`,
-  `RagIngestionIntegrationTest`, `RagQueryIntegrationTest`) run against a
+  `RagIngestionIntegrationTest`, `RagQueryIntegrationTest`,
+  `RagAccessControlIntegrationTest`) run against a
   Testcontainers Postgres (app bookkeeping only — no vector data lives there;
   that's Bedrock's Aurora) and **skip automatically** when Docker isn't
   running.
-- `BedrockKnowledgeBaseClient` is mocked in both RAG integration tests — there's
+- `BedrockKnowledgeBaseClient` is mocked in every RAG integration test — there's
   no local/Testcontainers stand-in for a real Bedrock Knowledge Base, so these
   cover the document/version/job bookkeeping and the S3-sidecar contract, not
   Bedrock itself.
 - `RagQueryIntegrationTest` also stubs the chat model, so the full
   grounded-answer path is covered without live AWS credentials.
+- `RagAccessControlIntegrationTest` covers the permission model: the 401s, the
+  role boundaries, the `access_groups` attribute reaching the S3 sidecar, and
+  the per-caller `RetrievalFilter`. Authentication is simulated with
+  `TestTokens`, which mints the same claims a real Cognito ID token carries, so
+  requests take the same path through the filter chain without a network call.
+  The group boundary itself is enforced inside Bedrock, which is mocked — see
+  §4 for the live pass.
 
 ## 2. One-time AWS setup (required — there's no offline mode)
 
@@ -94,35 +105,78 @@ actually got used.
 
 ```bash
 B=http://localhost:8080/api/rag
-H='-H X-Tenant-Id:demo'
+
+# Sign in first -- every /api/** route except login, refresh and /api/health
+# needs a Cognito ID token. Seed a user with `aws cognito-idp admin-create-user`
+# + `admin-set-user-password`, setting custom:tenant_id and custom:role.
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@rootstock.local","password":"..."}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["idToken"])')
+# A bash array, so the space inside the header value survives word splitting.
+H=(-H "Authorization: Bearer $TOKEN")
+
+# who does the backend think you are? (tenant/role/groups all come off the token)
+curl -s "${H[@]}" http://localhost:8080/api/auth/me
 
 # upload a document
 printf 'The warranty period is 24 months from the purchase date.\n' > /tmp/kb.txt
-curl -s $H -F 'file=@/tmp/kb.txt;type=text/plain' $B/documents
+curl -s "${H[@]}" -F 'file=@/tmp/kb.txt;type=text/plain' $B/documents
 
 # watch ingestion: QUEUED -> RUNNING -> SUCCEEDED (each attempt triggers a real
 # Bedrock data-source sync and polls it, so this can take a several seconds)
-curl -s $H "$B/jobs" | python3 -m json.tool
+curl -s "${H[@]}" "$B/jobs" | python3 -m json.tool
 
 # the version shows INDEXED once ingestion finishes
-curl -s $H "$B/documents" | python3 -m json.tool
+curl -s "${H[@]}" "$B/documents" | python3 -m json.tool
 
 # a 'default' profile is auto-seeded on first use
-curl -s $H "$B/profiles" | python3 -m json.tool
+curl -s "${H[@]}" "$B/profiles" | python3 -m json.tool
 
 # query
-curl -s $H -H 'Content-Type: application/json' \
+curl -s "${H[@]}" -H 'Content-Type: application/json' \
   -d '{"question":"how long is the warranty?","similarityThreshold":0}' $B/query
 ```
 
 **Versioning & rollback**: re-`POST` the same file to create a new version, then
 `POST /documents/{id}/versions/{n}/activate` to switch which one serves queries.
 
-**Tenant isolation**: repeat the upload/query with a different `X-Tenant-Id`
-value and confirm each tenant only ever sees its own documents in
-`GET /documents` and its own citations in query responses — this is enforced
-by the `tenant_id` tag on every uploaded object's S3 metadata sidecar, filtered
-on at query time via Bedrock's `Retrieve` filter.
+**Tenant isolation**: sign in as a user whose `custom:tenant_id` is a different
+tenant and confirm each only ever sees its own documents in `GET /documents` and
+its own citations in query responses — enforced by the `tenant_id` tag on every
+uploaded object's S3 metadata sidecar, filtered on at query time via Bedrock's
+`Retrieve` filter. The tenant can no longer be asserted by the caller at all:
+it comes from the signed token, so there is no header to change.
+
+**Roles**: with a `VIEWER` token, `GET /documents` and `POST /query` return 200
+while `POST /documents`, `POST /profiles` and `POST /access-groups` return 403.
+With no token (or a malformed one) every route above returns 401, and
+`GET /api/health` still returns 200.
+
+**Document access groups** (needs two users in the same tenant, one in a
+Cognito group, one not):
+
+```bash
+# as ADMIN: create the group and restrict a document to it
+curl -s "${H[@]}" -H 'Content-Type: application/json' -d '{"name":"hr-only"}' $B/access-groups
+curl -s -X PUT "${H[@]}" -H 'Content-Type: application/json' \
+  -d '{"groups":["hr-only"]}' $B/documents/$DOC_ID/access-groups
+```
+
+That queues a re-sync; wait for the version to go back to `INDEXED` before
+testing, since Bedrock enforces its own copy of the grants and the previous
+ones apply until the sync lands. Then ask the same question three ways: a
+member of `hr-only` gets a grounded answer, a non-member gets
+`grounded: false` with no citations even when naming the document explicitly
+and asking for its contents verbatim, and an `ADMIN` sees it regardless of
+membership.
+
+> Because Bedrock reads the grants from the S3 sidecar, a document whose
+> `blob_key` predates the single-object key scheme
+> (`rag-kb/<tenant>/<doc>/v<n>`) has its rewritten sidecar land outside the data
+> source's inclusion prefix — the ACL change reports success but never reaches
+> Bedrock. Such a document stays admin-only (fail-closed). Re-upload it to move
+> it onto the current scheme.
 
 **Reranking**: `POST /profiles/{id}/versions` with
 `{"rerankerEnabled": true, "rerankerModel": "cohere.rerank-v3-5:0"}`, then
@@ -135,8 +189,12 @@ observable.
 
 ## 5. Manual UI test — `http://localhost:5173/knowledge`
 
-- Set the **Tenant** field (e.g. `demo`) — every request carries it as
-  `X-Tenant-Id`.
+- Sign in with a seeded Cognito user. The header then shows your email, role,
+  tenant and groups; there is no tenant field to type into any more.
+- As a `VIEWER`, confirm the upload dropzone and the per-version actions are
+  gone, and that the **Tuning** and **Access** tabs aren't offered.
+- As an `ADMIN`, create a group on the **Access** tab, then expand a document
+  on **Documents** and tag it — *Save access & re-sync* queues the sync.
 - **Documents** — drop a PDF/Word/text file, watch the upload progress bar,
   then expand the row to see the version, activate / reindex / download /
   delete.
