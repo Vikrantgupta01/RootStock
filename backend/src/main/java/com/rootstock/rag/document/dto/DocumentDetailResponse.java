@@ -1,5 +1,6 @@
 package com.rootstock.rag.document.dto;
 
+import com.rootstock.rag.access.AccessGroup;
 import com.rootstock.rag.document.Document;
 import com.rootstock.rag.document.DocumentVersion;
 import java.time.Instant;
@@ -14,6 +15,8 @@ public record DocumentDetailResponse(
 		UUID activeVersionId,
 		Instant createdAt,
 		Instant updatedAt,
+		/** Groups allowed to retrieve this document; empty means the whole tenant. */
+		List<String> accessGroups,
 		List<DocumentVersionResponse> versions) {
 
 	public static DocumentDetailResponse of(Document d, List<DocumentVersion> versions) {
@@ -28,6 +31,7 @@ public record DocumentDetailResponse(
 				d.getActiveVersionId(),
 				d.getCreatedAt(),
 				d.getUpdatedAt(),
+				d.getAccessGroups().stream().map(AccessGroup::getName).sorted().toList(),
 				versionDtos);
 	}
 }

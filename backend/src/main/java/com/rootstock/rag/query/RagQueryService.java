@@ -1,5 +1,6 @@
 package com.rootstock.rag.query;
 
+import com.rootstock.auth.AuthContext;
 import com.rootstock.chat.ChatService;
 import com.rootstock.rag.RagProperties;
 import com.rootstock.rag.document.ActiveVersionResolver;
@@ -76,8 +77,13 @@ public class RagQueryService {
 		double threshold = request.similarityThreshold() != null
 				? request.similarityThreshold() : profile.getSimilarityThreshold();
 
+		// Bedrock applies this filter itself, so a chunk the caller's groups don't
+		// cover is never returned at all -- the chat model never sees it, and there
+		// is nothing to leak through the answer. Null for an admin: no group
+		// restriction, matching what every user saw before ACLs existed.
 		RetrievalFilter filter = KnowledgeBaseFilters.retrieval(tenantId,
-				usedVersionIds.stream().map(UUID::toString).toList());
+				usedVersionIds.stream().map(UUID::toString).toList(),
+				AuthContext.retrievalGroupsOrNull());
 		String rerankerModelArn = rerankerModelArn(profile);
 		List<KnowledgeBaseRetrievalResult> rawHits = kb.retrieve(
 				properties.bedrock().knowledgeBaseId(), request.question(), topK, filter, rerankerModelArn);

@@ -1,8 +1,10 @@
 package com.rootstock.rag.document;
 
+import com.rootstock.auth.AuthContext;
 import com.rootstock.common.ResourceNotFoundException;
 import com.rootstock.common.UnsupportedContentTypeException;
 import com.rootstock.rag.RagProperties;
+import com.rootstock.rag.access.AccessGroup;
 import com.rootstock.rag.blob.BlobStore;
 import com.rootstock.rag.document.dto.DocumentDetailResponse;
 import com.rootstock.rag.document.dto.DocumentSummaryResponse;
@@ -17,21 +19,25 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class DocumentService {
@@ -49,14 +55,16 @@ public class DocumentService {
 	private final IngestionJobRepository jobs;
 	private final BlobStore blobStore;
 	private final RagProperties properties;
+	private final ObjectMapper json;
 
 	public DocumentService(DocumentRepository documents, DocumentVersionRepository versions,
-			IngestionJobRepository jobs, BlobStore blobStore, RagProperties properties) {
+			IngestionJobRepository jobs, BlobStore blobStore, RagProperties properties, ObjectMapper json) {
 		this.documents = documents;
 		this.versions = versions;
 		this.jobs = jobs;
 		this.blobStore = blobStore;
 		this.properties = properties;
+		this.json = json;
 	}
 
 	// ---- queries -------------------------------------------------------------
@@ -76,6 +84,7 @@ public class DocumentService {
 	// ---- uploads ----------------------------------------------------------- -
 
 	@Transactional
+	@PreAuthorize("hasAnyRole('ADMIN','EDITOR')")
 	public UploadResponse upload(MultipartFile file, String sourceKeyOverride, String displayNameOverride) {
 		String tenantId = TenantContext.require();
 		byte[] bytes = read(file);
@@ -103,6 +112,7 @@ public class DocumentService {
 	}
 
 	@Transactional
+	@PreAuthorize("hasAnyRole('ADMIN','EDITOR')")
 	public UploadResponse addVersion(UUID documentId, MultipartFile file) {
 		Document document = requireDocument(documentId);
 		byte[] bytes = read(file);
@@ -127,7 +137,7 @@ public class DocumentService {
 
 		// The sidecar tags the version's own UUID (not its versionNo) since that's
 		// what query-time retrieval filters against -- only available once saved.
-		writeMetadataSidecar(blobKey, document.getTenantId(), document.getId(), version.getId());
+		writeMetadataSidecar(blobKey, document, version.getId());
 		jobs.save(new IngestionJob(document.getTenantId(), IngestionJobKind.INGEST,
 				version.getId(), null, properties.ingest().maxAttempts()));
 		return version;
@@ -136,6 +146,7 @@ public class DocumentService {
 	// ---- version lifecycle --------------------------------------------------
 
 	@Transactional
+	@PreAuthorize("hasAnyRole('ADMIN','EDITOR')")
 	public DocumentDetailResponse activateVersion(UUID documentId, int versionNo) {
 		Document document = requireDocument(documentId);
 		DocumentVersion version = requireVersion(document.getId(), versionNo);
@@ -144,12 +155,13 @@ public class DocumentService {
 	}
 
 	@Transactional
+	@PreAuthorize("hasAnyRole('ADMIN','EDITOR')")
 	public DocumentVersionResponse reindexVersion(UUID documentId, int versionNo) {
 		Document document = requireDocument(documentId);
 		DocumentVersion version = requireVersion(document.getId(), versionNo);
 		byte[] bytes = readBytes(version.getBlobKey());
 		blobStore.put(version.getBlobKey(), bytes, document.getContentType());
-		writeMetadataSidecar(version.getBlobKey(), document.getTenantId(), document.getId(), version.getId());
+		writeMetadataSidecar(version.getBlobKey(), document, version.getId());
 		jobs.save(new IngestionJob(document.getTenantId(), IngestionJobKind.REINDEX,
 				version.getId(), null, properties.ingest().maxAttempts()));
 		version.setStatus(DocumentStatus.PENDING);
@@ -158,6 +170,7 @@ public class DocumentService {
 	}
 
 	@Transactional
+	@PreAuthorize("hasAnyRole('ADMIN','EDITOR')")
 	public void deleteVersion(UUID documentId, int versionNo) {
 		Document document = requireDocument(documentId);
 		DocumentVersion version = requireVersion(document.getId(), versionNo);
@@ -169,6 +182,7 @@ public class DocumentService {
 	}
 
 	@Transactional
+	@PreAuthorize("hasAnyRole('ADMIN','EDITOR')")
 	public void deleteDocument(UUID documentId) {
 		Document document = requireDocument(documentId);
 		for (DocumentVersion version : versions.findByDocumentIdOrderByVersionNoDesc(document.getId())) {
@@ -178,8 +192,36 @@ public class DocumentService {
 		documents.delete(document); // document_version rows cascade in the DB
 	}
 
-	private void writeMetadataSidecar(String blobKey, String tenantId, UUID documentId, UUID versionId) {
-		blobStore.put(blobKey + ".metadata.json", metadataSidecar(tenantId, documentId, versionId), "application/json");
+	// ---- access control ------------------------------------------------------
+
+	/**
+	 * Replaces the document's access grants, then re-syncs every version so the
+	 * change actually takes effect: Bedrock filters on the copy of the ACL in the
+	 * S3 sidecar, and only notices a rewritten sidecar on its next ingestion job.
+	 * Until that job runs, retrieval still enforces the <em>previous</em> grants.
+	 *
+	 * @param accessGroups the groups allowed to retrieve it; empty restores
+	 *                     tenant-wide visibility
+	 */
+	@Transactional
+	@PreAuthorize("hasRole('ADMIN')")
+	public DocumentDetailResponse replaceAccessGroups(UUID documentId, Set<AccessGroup> accessGroups) {
+		Document document = requireDocument(documentId);
+		document.setAccessGroups(new LinkedHashSet<>(accessGroups));
+
+		List<DocumentVersion> all = versions.findByDocumentIdOrderByVersionNoDesc(document.getId());
+		for (DocumentVersion version : all) {
+			writeMetadataSidecar(version.getBlobKey(), document, version.getId());
+			jobs.save(new IngestionJob(document.getTenantId(), IngestionJobKind.REINDEX,
+					version.getId(), null, properties.ingest().maxAttempts()));
+			version.setStatus(DocumentStatus.PENDING);
+			version.setErrorMessage(null);
+		}
+		return DocumentDetailResponse.of(document, all);
+	}
+
+	private void writeMetadataSidecar(String blobKey, Document document, UUID versionId) {
+		blobStore.put(blobKey + ".metadata.json", metadataSidecar(document, versionId), "application/json");
 	}
 
 	private void purgeKnowledgeBaseCopy(String tenantId, String blobKey) {
@@ -204,17 +246,47 @@ public class DocumentService {
 		return "rag-kb/" + tenantId + "/" + documentId + "/v" + versionNo;
 	}
 
-	private static byte[] metadataSidecar(String tenantId, UUID documentId, UUID versionId) {
-		String json = """
-				{"metadataAttributes":{"%s":"%s","%s":"%s","%s":"%s"}}""".formatted(
-				RagChunkMetadata.TENANT_ID, escape(tenantId),
-				RagChunkMetadata.DOCUMENT_ID, documentId,
-				RagChunkMetadata.DOCUMENT_VERSION_ID, versionId);
-		return json.getBytes(StandardCharsets.UTF_8);
+	/**
+	 * The {@code .metadata.json} Bedrock reads alongside the object: the attributes
+	 * every retrieval filter is built from.
+	 *
+	 * <p>Uses Bedrock's fully-typed attribute form rather than the shorter
+	 * {@code {"key":"value"}} one because {@code access_groups} is a
+	 * {@code STRING_LIST}, which the short form has no way to express. Nothing is
+	 * embedded ({@code includeForEmbedding: false}) -- these are identifiers and
+	 * permissions, and mixing them into the chunk text would only pollute the
+	 * vector with ids nobody will ever ask about.
+	 */
+	private byte[] metadataSidecar(Document document, UUID versionId) {
+		Map<String, Object> attributes = new LinkedHashMap<>();
+		attributes.put(RagChunkMetadata.TENANT_ID, stringAttribute(document.getTenantId()));
+		attributes.put(RagChunkMetadata.DOCUMENT_ID, stringAttribute(document.getId().toString()));
+		attributes.put(RagChunkMetadata.DOCUMENT_VERSION_ID, stringAttribute(versionId.toString()));
+		attributes.put(RagChunkMetadata.ACCESS_GROUPS, stringListAttribute(accessGroupNames(document)));
+		return json.writeValueAsBytes(Map.of("metadataAttributes", attributes));
 	}
 
-	private static String escape(String value) {
-		return value.replace("\\", "\\\\").replace("\"", "\\\"");
+	/**
+	 * A document with no explicit grants is visible tenant-wide, which the sidecar
+	 * spells as the synthetic {@code __public__} group every caller carries -- a
+	 * value the retrieval filter can match, rather than an absent attribute it
+	 * would have to special-case.
+	 */
+	private static List<String> accessGroupNames(Document document) {
+		List<String> names = document.getAccessGroups().stream().map(AccessGroup::getName).sorted().toList();
+		return names.isEmpty() ? List.of(AuthContext.PUBLIC_GROUP) : names;
+	}
+
+	private static Map<String, Object> stringAttribute(String value) {
+		return attribute(Map.of("type", "STRING", "stringValue", value));
+	}
+
+	private static Map<String, Object> stringListAttribute(List<String> values) {
+		return attribute(Map.of("type", "STRING_LIST", "stringListValue", values));
+	}
+
+	private static Map<String, Object> attribute(Map<String, Object> value) {
+		return Map.of("value", value, "includeForEmbedding", false);
 	}
 
 	// ---- download ---------------------------------------------------------- -

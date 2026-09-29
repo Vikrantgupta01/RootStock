@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.mock.web.MockMultipartFile;
@@ -24,6 +25,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import com.rootstock.common.GlobalExceptionHandler;
 
+// Security is deliberately out of this slice: the filter chain lives in
+// SecurityConfig (not loaded by @WebMvcTest) and @PreAuthorize sits on the
+// services this test mocks out. Authentication and role enforcement are
+// covered end to end by the RAG integration tests instead.
+@AutoConfigureMockMvc(addFilters = false)
 @WebMvcTest(DocumentController.class)
 @Import(GlobalExceptionHandler.class)
 class DocumentControllerTest {

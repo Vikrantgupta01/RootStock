@@ -69,10 +69,14 @@ rootstock:
   chat:
     system-prompt: >
       You are RootStock's assistant. Be concise, accurate, and helpful.
+  auth:
+    cognito:
+      # Identity provider for the whole API. Pool and client ids are public
+      # identifiers in every OIDC flow, not secrets.
+      region: ${AWS_REGION:us-east-1}
+      user-pool-id: ${COGNITO_USER_POOL_ID:us-east-1_eJI6vUhpH}
+      client-id: ${COGNITO_CLIENT_ID:129t4ms9c91dgdmu77rpf2r0ug}
   rag:
-    tenant:
-      header: X-Tenant-Id
-      default-tenant: default
     blob:
       # filesystem (no infra) or s3 (default -- real AWS, or MinIO/LocalStack via
       # endpoint). Bedrock Knowledge Base ingestion requires real S3, so this app

@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.rootstock.TestcontainersConfiguration;
+import com.rootstock.auth.TestTokens;
 import com.rootstock.rag.ingest.IngestionService;
 import com.rootstock.rag.vector.BedrockKnowledgeBaseClient;
 import com.rootstock.rag.vector.RagChunkMetadata;
@@ -99,7 +100,7 @@ class RagQueryIntegrationTest {
 
 		String uploadJson = mockMvc.perform(multipart("/api/rag/documents")
 						.file(new MockMultipartFile("file", "policy.txt", "text/plain", body))
-						.header("X-Tenant-Id", tenant))
+						.with(TestTokens.admin(tenant)))
 				.andExpect(status().isCreated())
 				.andReturn().getResponse().getContentAsString();
 		UUID documentId = UUID.fromString(JsonPath.read(uploadJson, "$.documentId"));
@@ -117,7 +118,7 @@ class RagQueryIntegrationTest {
 		given(kb.retrieve(eq("test-kb"), any(), anyInt(), any(), any())).willReturn(List.of(hit));
 
 		String json = mockMvc.perform(post("/api/rag/query")
-						.header("X-Tenant-Id", tenant)
+						.with(TestTokens.admin(tenant))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"question\":\"How long do I have to request a refund?\",\"similarityThreshold\":0.0}"))
 				.andExpect(status().isOk())
@@ -134,7 +135,7 @@ class RagQueryIntegrationTest {
 	@Test
 	void queryWithoutDocumentsIsNotGrounded() throws Exception {
 		mockMvc.perform(post("/api/rag/query")
-						.header("X-Tenant-Id", "empty-" + UUID.randomUUID())
+						.with(TestTokens.admin("empty-" + UUID.randomUUID()))
 						.contentType(MediaType.APPLICATION_JSON)
 						.content("{\"question\":\"anything?\"}"))
 				.andExpect(status().isOk())

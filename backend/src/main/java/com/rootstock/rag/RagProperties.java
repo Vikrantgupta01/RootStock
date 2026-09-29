@@ -5,22 +5,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * Binds the {@code rootstock.rag.*} namespace: tenant resolution, blob storage,
- * embeddings, the ingestion poller, and the seed values for a tenant's default
- * RAG profile.
+ * Binds the {@code rootstock.rag.*} namespace: blob storage, the Bedrock
+ * Knowledge Base, the ingestion poller, and the seed values for a tenant's
+ * default RAG profile. (Tenant identity is no longer configured here -- it comes
+ * off the caller's verified token; see {@code com.rootstock.auth}.)
  */
 @ConfigurationProperties(prefix = "rootstock.rag")
 public record RagProperties(
-		@DefaultValue Tenant tenant,
 		@DefaultValue Blob blob,
 		@DefaultValue Bedrock bedrock,
 		@DefaultValue Ingest ingest,
 		@DefaultValue Defaults defaults) {
-
-	public record Tenant(
-			@DefaultValue("X-Tenant-Id") String header,
-			@DefaultValue("default") String defaultTenant) {
-	}
 
 	public record Blob(
 			@DefaultValue("filesystem") String backend,

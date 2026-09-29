@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.rootstock.TestcontainersConfiguration;
+import com.rootstock.auth.TestTokens;
 import com.rootstock.rag.blob.BlobStore;
 import com.rootstock.rag.document.DocumentStatus;
 import com.rootstock.rag.document.DocumentVersion;
@@ -96,7 +97,7 @@ class RagIngestionIntegrationTest {
 				""").repeat(20).getBytes();
 		MockMultipartFile file = new MockMultipartFile("file", "handbook.txt", "text/plain", body);
 
-		String uploadJson = mockMvc.perform(multipart("/api/rag/documents").file(file).header("X-Tenant-Id", tenant))
+		String uploadJson = mockMvc.perform(multipart("/api/rag/documents").file(file).with(TestTokens.admin(tenant)))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.version.status").value("PENDING"))
 				.andReturn().getResponse().getContentAsString();
@@ -115,7 +116,7 @@ class RagIngestionIntegrationTest {
 		assertThat(v1.getIndexedAt()).isNotNull();
 
 		// another tenant sees nothing
-		mockMvc.perform(get("/api/rag/documents").header("X-Tenant-Id", "someone-else"))
+		mockMvc.perform(get("/api/rag/documents").with(TestTokens.admin("someone-else")))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.page.totalElements").value(0));
 
@@ -123,13 +124,13 @@ class RagIngestionIntegrationTest {
 		MockMultipartFile v2File = new MockMultipartFile("file", "handbook.txt", "text/plain",
 				"Updated: vacation is now 20 days per year.".getBytes());
 		mockMvc.perform(multipart("/api/rag/documents/{id}/versions", documentId).file(v2File)
-						.header("X-Tenant-Id", tenant))
+						.with(TestTokens.admin(tenant)))
 				.andExpect(status().isCreated());
 		drainIngestionQueue();
 		verify(kb, times(2)).sync("test-kb", "test-ds");
 
 		mockMvc.perform(post("/api/rag/documents/{id}/versions/{n}/activate", documentId, 2)
-						.header("X-Tenant-Id", tenant))
+						.with(TestTokens.admin(tenant)))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.activeVersionId").isNotEmpty());
 
@@ -138,7 +139,7 @@ class RagIngestionIntegrationTest {
 
 		// deleting the document purges the KB copy of every version and queues a cleanup sync each
 		mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-						.delete("/api/rag/documents/{id}", documentId).header("X-Tenant-Id", tenant))
+						.delete("/api/rag/documents/{id}", documentId).with(TestTokens.admin(tenant)))
 				.andExpect(status().isNoContent());
 		assertThat(blobStore.exists(v1Key)).isFalse();
 

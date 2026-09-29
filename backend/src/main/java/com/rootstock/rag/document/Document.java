@@ -1,14 +1,25 @@
 package com.rootstock.rag.document;
 
+import com.rootstock.rag.access.AccessGroup;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -18,6 +29,11 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
  * {@code sourceKey} (usually the uploaded filename). Its bytes live in one or
  * more {@link DocumentVersion}s; {@code activeVersionId} points at the version
  * used for retrieval.
+ *
+ * <p>{@code accessGroups} restricts who may retrieve it: empty means everyone in
+ * the tenant. {@code metadata} is free-form, locally queryable document metadata;
+ * both are mirrored into the S3 {@code .metadata.json} sidecar Bedrock filters
+ * on, but this row is the source of truth for them.
  */
 @Entity
 @Table(name = "document")
@@ -43,6 +59,17 @@ public class Document {
 
 	@Column(name = "active_version_id")
 	private UUID activeVersionId;
+
+	/** Empty = visible to everyone in the tenant. */
+	@ManyToMany(fetch = FetchType.EAGER)
+	@JoinTable(name = "document_access_group",
+			joinColumns = @JoinColumn(name = "document_id"),
+			inverseJoinColumns = @JoinColumn(name = "group_id"))
+	private Set<AccessGroup> accessGroups = new LinkedHashSet<>();
+
+	@JdbcTypeCode(SqlTypes.JSON)
+	@Column(nullable = false)
+	private Map<String, Object> metadata = new HashMap<>();
 
 	@CreatedDate
 	@Column(name = "created_at", nullable = false, updatable = false)
@@ -96,6 +123,22 @@ public class Document {
 
 	public void setActiveVersionId(UUID activeVersionId) {
 		this.activeVersionId = activeVersionId;
+	}
+
+	public Set<AccessGroup> getAccessGroups() {
+		return accessGroups;
+	}
+
+	public void setAccessGroups(Set<AccessGroup> accessGroups) {
+		this.accessGroups = accessGroups != null ? accessGroups : new LinkedHashSet<>();
+	}
+
+	public Map<String, Object> getMetadata() {
+		return metadata;
+	}
+
+	public void setMetadata(Map<String, Object> metadata) {
+		this.metadata = metadata != null ? metadata : new HashMap<>();
 	}
 
 	public Instant getCreatedAt() {

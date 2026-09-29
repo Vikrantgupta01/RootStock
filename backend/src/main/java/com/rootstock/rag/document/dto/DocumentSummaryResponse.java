@@ -1,8 +1,10 @@
 package com.rootstock.rag.document.dto;
 
+import com.rootstock.rag.access.AccessGroup;
 import com.rootstock.rag.document.Document;
 import com.rootstock.rag.document.DocumentStatus;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record DocumentSummaryResponse(
@@ -14,7 +16,9 @@ public record DocumentSummaryResponse(
 		int versionCount,
 		DocumentStatus activeStatus,
 		Instant createdAt,
-		Instant updatedAt) {
+		Instant updatedAt,
+		/** Groups allowed to retrieve this document; empty means the whole tenant. */
+		List<String> accessGroups) {
 
 	public static DocumentSummaryResponse of(Document d, int versionCount, DocumentStatus activeStatus) {
 		return new DocumentSummaryResponse(
@@ -26,6 +30,7 @@ public record DocumentSummaryResponse(
 				versionCount,
 				activeStatus,
 				d.getCreatedAt(),
-				d.getUpdatedAt());
+				d.getUpdatedAt(),
+				d.getAccessGroups().stream().map(AccessGroup::getName).sorted().toList());
 	}
 }

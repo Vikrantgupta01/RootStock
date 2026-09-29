@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -75,6 +76,7 @@ public class RagProfileService {
 	// ---- mutate ---------------------------------------------------------- -
 
 	@Transactional
+	@PreAuthorize("hasRole('ADMIN')")
 	public RagProfile create(CreateRagProfileRequest request) {
 		String tenantId = TenantContext.require();
 		if (profiles.findFirstByTenantIdAndNameOrderByVersionNoDesc(tenantId, request.name()).isPresent()) {
@@ -99,6 +101,7 @@ public class RagProfileService {
 	}
 
 	@Transactional
+	@PreAuthorize("hasRole('ADMIN')")
 	public RagProfile update(UUID id, UpdateRagProfileRequest request) {
 		RagProfile source = requireProfile(id);
 		int nextVersion = profiles
@@ -124,6 +127,7 @@ public class RagProfileService {
 
 	/** Flips the active pointer to {@code id}. Always immediate -- no re-index to wait for. */
 	@Transactional
+	@PreAuthorize("hasRole('ADMIN')")
 	public RagProfile activate(UUID id) {
 		String tenantId = TenantContext.require();
 		RagProfile target = requireProfile(id);

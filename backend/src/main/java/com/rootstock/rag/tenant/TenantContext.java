@@ -1,10 +1,10 @@
 package com.rootstock.rag.tenant;
 
 /**
- * Holds the current request's tenant id in a {@link ThreadLocal}. Populated by
- * {@link TenantFilter} for every HTTP request and by the ingestion poller for
- * background jobs. Real authentication will later resolve the principal to a
- * tenant and set it here instead of trusting a header.
+ * Holds the current request's tenant id in a {@link ThreadLocal}. Populated for
+ * every HTTP request by {@link com.rootstock.auth.CognitoClaimsFilter} from the
+ * verified ID token's {@code custom:tenant_id} claim, and by the ingestion
+ * poller for background jobs.
  */
 public final class TenantContext {
 
