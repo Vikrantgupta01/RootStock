@@ -1,9 +1,8 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { AccessTab } from '../components/rag/AccessTab'
 import { ActivityTab } from '../components/rag/ActivityTab'
 import { DocumentsTab } from '../components/rag/DocumentsTab'
-import { HealthBadge } from '../components/HealthBadge'
+import { AppShell } from '../components/AppShell'
 import { IdentityBar } from '../components/IdentityBar'
 import { PlaygroundTab } from '../components/rag/PlaygroundTab'
 import { TuningTab } from '../components/rag/TuningTab'
@@ -42,16 +41,13 @@ export function KnowledgePage() {
   }
 
   return (
-    <main className="page page--wide">
-      <header className="page__header">
-        <h1>
-          <Link to="/" className="brandlink">
-            RootStock
-          </Link>{' '}
-          <span className="muted">/ Knowledge base</span>
-        </h1>
-        <HealthBadge />
-      </header>
+    <AppShell wide>
+      <div className="page__header">
+        <div>
+          <span className="kicker">Retrieval</span>
+          <h1>Knowledge base</h1>
+        </div>
+      </div>
 
       <IdentityBar />
 
@@ -70,6 +66,6 @@ export function KnowledgePage() {
         {current === 'Playground' && <PlaygroundTab />}
         {current === 'Activity' && <ActivityTab />}
       </section>
-    </main>
+    </AppShell>
   )
 }

@@ -30,13 +30,17 @@ export function LoginScreen() {
 
   return (
     <main className="page page--narrow">
-      <header className="page__header">
-        <h1>RootStock</h1>
+      <div className="page__header">
+        <span className="brand">
+          <span className="brand__dot" aria-hidden="true" />
+          RootStock
+        </span>
         <HealthBadge />
-      </header>
+      </div>
 
       <form className="card stack login" onSubmit={submit}>
         <h2>Sign in</h2>
+        <p className="login__lead">Use the account your administrator created for you.</p>
         <label className="field">
           Email
           <input
