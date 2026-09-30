@@ -43,58 +43,69 @@ export function NewUserForm({ groups }: { groups: string[] }) {
   }
 
   return (
-    <form className="card stack" onSubmit={submit}>
-      <h3>New user</h3>
-      <label className="field">
-        Email
-        <input type="email" value={email} required onChange={(e) => setEmail(e.target.value)} />
-      </label>
-      <label className="field">
-        Password
-        <input
-          type="text"
-          value={password}
-          required
-          autoComplete="off"
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <span className="muted small">
-          Set as a permanent password so they can sign in immediately — pass it on out of band.
-          The user pool requires at least 12 characters with upper and lower case, a digit and a symbol.
-        </span>
-      </label>
-      <label className="field">
-        Role
-        <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
-          {ROLES.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.value} — {r.hint}
-            </option>
-          ))}
-        </select>
-      </label>
-      {groups.length > 0 && (
-        <div className="field">
-          Access groups
-          <div className="pill-list">
-            {groups.map((g) => (
-              <label key={g} className={`pill pill--toggle${selected.includes(g) ? ' pill--on' : ''}`}>
-                <input type="checkbox" checked={selected.includes(g)} onChange={() => toggle(g)} />
-                {g}
-              </label>
+    <form className="panel" onSubmit={submit}>
+      <div className="panel__head">
+        <h3 className="panel__title">New user</h3>
+        <p className="panel__hint">
+          Created in your tenant, ready to sign in — pass the password on out of band.
+        </p>
+      </div>
+
+      <div className="panel__body">
+        <label className="field">
+          Email
+          <input type="email" value={email} required onChange={(e) => setEmail(e.target.value)} />
+        </label>
+        <label className="field">
+          Password
+          <input
+            type="text"
+            value={password}
+            required
+            autoComplete="off"
+            placeholder="12+ chars, mixed case, digit, symbol"
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
+        <label className="field">
+          Role
+          <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
+            {ROLES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.value} — {r.hint}
+              </option>
             ))}
+          </select>
+        </label>
+        {groups.length > 0 && (
+          <div className="field">
+            <span>Access groups</span>
+            <div className="pill-list">
+              {groups.map((g) => (
+                <label key={g} className={`pill pill--toggle${selected.includes(g) ? ' pill--on' : ''}`}>
+                  <input type="checkbox" checked={selected.includes(g)} onChange={() => toggle(g)} />
+                  {g}
+                </label>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-      {error && <p className="error-text">{error}</p>}
-      {created && <p className="muted small">Created {created}.</p>}
-      <button className="btn" type="submit" disabled={create.isPending || !email.trim() || !password}>
-        {create.isPending ? 'Creating…' : 'Create user'}
-      </button>
-      <p className="muted small">
-        Created in this tenant only. The first admin of a <em>new</em> tenant still has to be
-        seeded with the AWS CLI — nothing here could authorize that.
-      </p>
+        )}
+        {error && <p className="error-text">{error}</p>}
+        {created && <p className="muted small">Created {created}.</p>}
+      </div>
+
+      <div className="form-foot">
+        <p className="form-foot__note">
+          A new tenant's first admin still has to be seeded with the AWS CLI.
+        </p>
+        <button
+          className="btn btn--primary"
+          type="submit"
+          disabled={create.isPending || !email.trim() || !password}
+        >
+          {create.isPending ? 'Creating…' : 'Create user'}
+        </button>
+      </div>
     </form>
   )
 }
