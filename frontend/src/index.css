@@ -436,14 +436,10 @@ textarea {
 
 .chat__bar {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.chat__bar select {
-  flex: 1;
-  min-width: 0;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
 }
 
 .chat__log {

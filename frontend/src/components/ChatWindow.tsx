@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { useChat, useChatConversations, useChatTranscript, useDeleteChatConversation } from '../hooks/useChat'
+import { useChat, useChatTranscript, useDeleteChatConversation } from '../hooks/useChat'
 
 interface Turn {
   role: 'user' | 'assistant'
@@ -32,7 +32,6 @@ export function ChatWindow() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [conversationId, setConversationId] = useState<string | null>(rememberedConversation)
   const chat = useChat()
-  const threads = useChatConversations()
   const remove = useDeleteChatConversation()
   const stored = useChatTranscript(conversationId)
 
@@ -76,20 +75,11 @@ export function ChatWindow() {
 
   return (
     <section className="chat">
-      <div className="chat__bar">
-        <select
-          value={conversationId ?? ''}
-          onChange={(e) => open(e.target.value || null)}
-          aria-label="Conversation"
-        >
-          <option value="">New conversation</option>
-          {threads.data?.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.title ?? 'Untitled'}
-            </option>
-          ))}
-        </select>
-        {conversationId && (
+      {conversationId && (
+        <div className="chat__bar">
+          <button className="btn btn--ghost btn--sm" onClick={() => open(null)}>
+            New chat
+          </button>
           <button
             className="btn btn--ghost btn--sm btn--danger"
             disabled={remove.isPending}
@@ -100,10 +90,10 @@ export function ChatWindow() {
               remove.mutate(id)
             }}
           >
-            delete
+            Delete
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="chat__log">
         {turns.length === 0 && (
