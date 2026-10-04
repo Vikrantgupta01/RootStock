@@ -100,6 +100,7 @@ public class TracingAspect {
 		}
 		finally {
 			observation.stop();
+			TraceIdentity.clear();
 		}
 	}
 
@@ -120,6 +121,7 @@ public class TracingAspect {
 		}
 		finally {
 			observation.stop();
+			TraceIdentity.clear();
 		}
 	}
 
@@ -154,7 +156,10 @@ public class TracingAspect {
 				.doOnNext(chunk -> answer.append(chunk))
 				.doOnComplete(() -> RequestTrace.output(observation, answer.toString()))
 				.doOnError(observation::error)
-				.doFinally(signal -> observation.stop());
+				.doFinally(signal -> {
+					observation.stop();
+					TraceIdentity.clear();
+				});
 	}
 
 	// ---- enrichment ---------------------------------------------------------
@@ -167,8 +172,14 @@ public class TracingAspect {
 	 */
 	@AfterReturning(pointcut = "conversationResolved()", returning = "conversation")
 	public void stampSession(Conversation conversation) {
+		if (conversation == null) {
+			return;
+		}
+		// Published for IdentityObservationFilter, so the session reaches child
+		// observations -- the generations and retrievals -- and not only the root.
+		TraceIdentity.setConversation(conversation.getId());
 		Observation current = observations.getCurrentObservation();
-		if (current != null && conversation != null) {
+		if (current != null) {
 			RequestTrace.session(current, conversation.getId());
 			if (conversation.getKind() != null) {
 				RequestTrace.metadata(current, "conversationKind", conversation.getKind().name());
