@@ -43,6 +43,12 @@ public class ChatContentObservationFilter implements ObservationFilter {
 
 	private static final Logger log = LoggerFactory.getLogger(ChatContentObservationFilter.class);
 
+	private static final String REQUEST_MODEL = "gen_ai.request.model";
+	private static final String RESPONSE_MODEL = "gen_ai.response.model";
+
+	/** What Spring AI emits when the provider returns no model id. */
+	private static final String NO_MODEL = "none";
+
 	private final ObjectMapper json;
 
 	public ChatContentObservationFilter(ObjectMapper json) {
@@ -59,7 +65,39 @@ public class ChatContentObservationFilter implements ObservationFilter {
 		// Langfuse would infer "generation" from the model attribute anyway, but an
 		// explicit type always wins over inference and cannot drift.
 		add(chat, LangfuseAttributes.OBSERVATION_TYPE, LangfuseAttributes.TYPE_GENERATION);
+		correctResponseModel(chat);
 		return chat;
+	}
+
+	/**
+	 * Spring AI's Bedrock Converse integration reports {@code gen_ai.response.model}
+	 * as the literal string "none" -- Bedrock does not echo a model id back. Langfuse
+	 * prefers the response model over the request model, so it recorded every
+	 * generation as model "none", which matches no entry in its pricing table and
+	 * left all cost tracking empty. Verified against a live trace before and after.
+	 *
+	 * <p>Safe to do from a filter: Micrometer applies the observation convention
+	 * before filters, so the convention's value is already present and this
+	 * replaces it by key.
+	 */
+	private static void correctResponseModel(ChatModelObservationContext context) {
+		String responseModel = lowCardinalityValue(context, RESPONSE_MODEL);
+		if (StringUtils.hasText(responseModel) && !NO_MODEL.equals(responseModel)) {
+			return;
+		}
+		String requestModel = lowCardinalityValue(context, REQUEST_MODEL);
+		if (StringUtils.hasText(requestModel)) {
+			context.addLowCardinalityKeyValue(KeyValue.of(RESPONSE_MODEL, requestModel));
+		}
+	}
+
+	private static String lowCardinalityValue(ChatModelObservationContext context, String key) {
+		for (KeyValue keyValue : context.getLowCardinalityKeyValues()) {
+			if (keyValue.getKey().equals(key)) {
+				return keyValue.getValue();
+			}
+		}
+		return null;
 	}
 
 	private List<Map<String, String>> promptMessages(ChatModelObservationContext context) {

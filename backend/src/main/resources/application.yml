@@ -73,13 +73,17 @@ management:
       export:
         enabled: false
   opentelemetry:
+    # Both this and the OTLP endpoint are overridden at startup by
+    # LangfuseEnvironmentPostProcessor, which turns OpenTelemetry on only when
+    # Langfuse is both enabled and fully configured. Boot creates an exporter
+    # only when the endpoint property is set, so it cannot be declared here:
+    # that would export unauthenticated from every key-less environment.
     enabled: ${LANGFUSE_ENABLED:true}
     tracing:
       export:
         otlp:
           # Langfuse accepts OTLP over HTTP only; it does not support gRPC.
-          # Endpoint and auth headers are set in LangfuseExporterConfig, which
-          # can derive the Basic credential from the two plain key env vars.
+          # The Basic auth header is added by LangfuseExporterConfig.
           protocol: http
   tracing:
     sampling:
@@ -88,12 +92,22 @@ management:
       probability: ${LANGFUSE_SAMPLE_RATE:1.0}
   observations:
     enable:
-      # Langfuse is for LLM work, and a trace cluttered with servlet and client
-      # HTTP spans buries it. Suppressing these also promotes our own request
-      # observation to the root of the trace, which is where Langfuse reads
-      # session, user, name and tags from.
+      # Langfuse is for LLM work. Everything below is framework plumbing that
+      # buries the actual call tree, and -- more importantly -- wraps it: while
+      # any of these are enabled the application's own span is NOT the root, and
+      # Langfuse reads a trace's name, session, user and tags from the root span.
+      # Audited against a live trace, which showed a "security filterchain"
+      # observation as the root of every request.
       http.server.requests: false
       http.client.requests: false
+      spring.security: false
+      tasks.scheduled.execution: false
+      # Spring AI's own wrappers around the model call. The generation itself
+      # (gen_ai.client.operation) is kept -- it carries model and token usage --
+      # but the advisor/tool-calling scaffolding around it is noise here.
+      spring.ai.chat.client: false
+      spring.ai.tool: false
+      spring.ai.advisor: false
 
 info:
   app:
