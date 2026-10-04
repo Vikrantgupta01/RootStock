@@ -73,7 +73,7 @@ management:
       export:
         enabled: false
   opentelemetry:
-    enabled: ${LANGFUSE_ENABLED:false}
+    enabled: ${LANGFUSE_ENABLED:true}
     tracing:
       export:
         otlp:
@@ -105,10 +105,13 @@ rootstock:
     langfuse:
       # Keys live in backend/.env, never here -- application.yml is committed.
       # Every value defaults to blank: a missing env var must not stop the app.
-      enabled: ${LANGFUSE_ENABLED:false}
-      # LANGFUSE_BASE_URL is accepted as an alias because that is the name the
-      # langfuse-cli uses, so a .env set up for the CLI works here unchanged.
-      host: ${LANGFUSE_HOST:${LANGFUSE_BASE_URL:}}
+      enabled: ${LANGFUSE_ENABLED:true}
+      # Neither of these is a secret: the host is a public endpoint and the flag
+      # is a deployment choice, so they carry real defaults here. Only the key
+      # pair lives in .env. LANGFUSE_BASE_URL is accepted as an alias for the
+      # host because that is the name langfuse-cli uses, so a .env written for
+      # the CLI works unchanged.
+      host: ${LANGFUSE_HOST:${LANGFUSE_BASE_URL:https://us.cloud.langfuse.com}}
       public-key: ${LANGFUSE_PUBLIC_KEY:}
       secret-key: ${LANGFUSE_SECRET_KEY:}
   cors:

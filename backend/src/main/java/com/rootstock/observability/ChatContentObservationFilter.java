@@ -4,6 +4,7 @@ import io.micrometer.common.KeyValue;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationFilter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -68,7 +69,7 @@ public class ChatContentObservationFilter implements ObservationFilter {
 		List<Map<String, String>> messages = new ArrayList<>();
 		for (Message message : context.getRequest().getInstructions()) {
 			if (StringUtils.hasText(message.getText())) {
-				messages.add(Map.of("role", roleOf(message), "content", message.getText()));
+				messages.add(message(roleOf(message), message.getText()));
 			}
 		}
 		return messages;
@@ -81,10 +82,22 @@ public class ChatContentObservationFilter implements ObservationFilter {
 		List<Map<String, String>> messages = new ArrayList<>();
 		for (Generation generation : context.getResponse().getResults()) {
 			if (generation.getOutput() != null && StringUtils.hasText(generation.getOutput().getText())) {
-				messages.add(Map.of("role", "assistant", "content", generation.getOutput().getText()));
+				messages.add(message("assistant", generation.getOutput().getText()));
 			}
 		}
 		return messages;
+	}
+
+	/**
+	 * Role first, then content, in a map that keeps insertion order. Map.of would
+	 * serialize the two keys in an unspecified order that varies between runs --
+	 * harmless to Langfuse, but it makes traces awkward to read and diff.
+	 */
+	private static Map<String, String> message(String role, String content) {
+		Map<String, String> message = new LinkedHashMap<>();
+		message.put("role", role);
+		message.put("content", content);
+		return message;
 	}
 
 	/** Spring AI's message types already line up with the role names Langfuse expects. */

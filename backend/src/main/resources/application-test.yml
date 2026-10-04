@@ -1,3 +1,7 @@
+management:
+  opentelemetry:
+    enabled: false
+
 spring:
   # Tests run against a Testcontainers Postgres wired via @ServiceConnection, for
   # document/version/job bookkeeping only -- no vector data lives there anymore.
@@ -10,6 +14,12 @@ spring:
       embedding: none
 
 rootstock:
+  observability:
+    langfuse:
+      # Tests never trace. application.yml now defaults this on, so without an
+      # explicit off here every test would build a Langfuse exporter config and
+      # log a warning about absent keys.
+      enabled: false
   rag:
     bedrock:
       knowledge-base-id: test-kb
