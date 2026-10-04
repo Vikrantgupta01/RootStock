@@ -58,12 +58,48 @@ management:
     env:
       enabled: true
 
+  # Tracing exists only to feed Langfuse, so it is bound to the same switch.
+  # `opentelemetry.enabled: false` is the decisive one: it makes traces, metrics
+  # and logging no-op implementations, so no exporter is built, no batch thread
+  # runs and nothing is logged. An environment that never sets LANGFUSE_ENABLED
+  # therefore carries the dependency inert -- no startup risk, no noise.
+  opentelemetry:
+    enabled: ${LANGFUSE_ENABLED:false}
+    tracing:
+      export:
+        otlp:
+          # Langfuse accepts OTLP over HTTP only; it does not support gRPC.
+          # Endpoint and auth headers are set in LangfuseExporterConfig, which
+          # can derive the Basic credential from the two plain key env vars.
+          protocol: http
+  tracing:
+    sampling:
+      # Every request, which is what you want while building this. If the
+      # Langfuse free-tier quota starts to bite, this is the lever.
+      probability: ${LANGFUSE_SAMPLE_RATE:1.0}
+  observations:
+    enable:
+      # Langfuse is for LLM work, and a trace cluttered with servlet and client
+      # HTTP spans buries it. Suppressing these also promotes our own request
+      # observation to the root of the trace, which is where Langfuse reads
+      # session, user, name and tags from.
+      http.server.requests: false
+      http.client.requests: false
+
 info:
   app:
     name: RootStock
     description: RootStock backend API
 
 rootstock:
+  observability:
+    langfuse:
+      # Keys live in backend/.env, never here -- application.yml is committed.
+      # Every value defaults to blank: a missing env var must not stop the app.
+      enabled: ${LANGFUSE_ENABLED:false}
+      host: ${LANGFUSE_HOST:}
+      public-key: ${LANGFUSE_PUBLIC_KEY:}
+      secret-key: ${LANGFUSE_SECRET_KEY:}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   chat:
@@ -109,3 +145,6 @@ logging:
   level:
     com.rootstock: DEBUG
     org.springframework.ai: INFO
+    # Bounded, known noise: if Langfuse is configured but unreachable the SDK
+    # logs failed export batches. Set to OFF to silence it entirely.
+    io.opentelemetry.exporter: ${LANGFUSE_EXPORTER_LOG_LEVEL:WARN}

@@ -63,6 +63,26 @@
 			<artifactId>cognitoidentityprovider</artifactId>
 		</dependency>
 		<dependency>
+			<!-- Enables @Aspect proxying (Boot 4 has no spring-boot-starter-aop).
+			     Tracing is applied as aspects so no business class has to know it
+			     exists; see com.rootstock.observability.TracingAspect. -->
+			<groupId>org.aspectj</groupId>
+			<artifactId>aspectjweaver</artifactId>
+		</dependency>
+		<dependency>
+			<!-- Exports Micrometer observations as OTLP traces (Langfuse ingests OTLP).
+			     Bundles micrometer-tracing-bridge-otel + opentelemetry-exporter-otlp. -->
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-opentelemetry</artifactId>
+		</dependency>
+		<dependency>
+			<!-- The starter pulls this in at runtime scope only; LangfuseExporterConfig
+			     compiles against OtlpHttpSpanExporterBuilder to set the endpoint and
+			     auth header, so it needs to be on the compile classpath too. -->
+			<groupId>io.opentelemetry</groupId>
+			<artifactId>opentelemetry-exporter-otlp</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
