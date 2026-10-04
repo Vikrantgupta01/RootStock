@@ -63,6 +63,15 @@ management:
   # and logging no-op implementations, so no exporter is built, no batch thread
   # runs and nothing is logged. An environment that never sets LANGFUSE_ENABLED
   # therefore carries the dependency inert -- no startup risk, no noise.
+  # Belt and braces: micrometer-registry-otlp is excluded in pom.xml, but if it
+  # ever returns transitively this stops it pushing metrics at localhost:4318.
+  # It lives under a different namespace from management.opentelemetry.* and is
+  # therefore NOT covered by the switch below -- that gap is what caused a
+  # ConnectException on every publish interval.
+  otlp:
+    metrics:
+      export:
+        enabled: false
   opentelemetry:
     enabled: ${LANGFUSE_ENABLED:false}
     tracing:
@@ -97,7 +106,9 @@ rootstock:
       # Keys live in backend/.env, never here -- application.yml is committed.
       # Every value defaults to blank: a missing env var must not stop the app.
       enabled: ${LANGFUSE_ENABLED:false}
-      host: ${LANGFUSE_HOST:}
+      # LANGFUSE_BASE_URL is accepted as an alias because that is the name the
+      # langfuse-cli uses, so a .env set up for the CLI works here unchanged.
+      host: ${LANGFUSE_HOST:${LANGFUSE_BASE_URL:}}
       public-key: ${LANGFUSE_PUBLIC_KEY:}
       secret-key: ${LANGFUSE_SECRET_KEY:}
   cors:

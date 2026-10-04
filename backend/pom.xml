@@ -74,6 +74,21 @@
 			     Bundles micrometer-tracing-bridge-otel + opentelemetry-exporter-otlp. -->
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-opentelemetry</artifactId>
+			<exclusions>
+				<exclusion>
+					<!-- An OTLP *metrics* push registry, which is a different mechanism
+					     from the OpenTelemetry SDK: it is configured under
+					     management.otlp.metrics.export.*, so disabling the SDK via
+					     management.opentelemetry.enabled does not stop it. Left in, it
+					     starts a scheduled publisher against its default localhost:4318
+					     endpoint and logs a ConnectException on every interval, in
+					     every environment, Langfuse configured or not. Traces are all
+					     this app sends; /actuator/metrics is served by the in-memory
+					     registry and is unaffected. -->
+					<groupId>io.micrometer</groupId>
+					<artifactId>micrometer-registry-otlp</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<!-- The starter pulls this in at runtime scope only; LangfuseExporterConfig
