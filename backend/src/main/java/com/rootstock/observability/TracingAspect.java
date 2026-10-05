@@ -1,5 +1,7 @@
 package com.rootstock.observability;
 
+import com.rootstock.agent.dto.AgentRequest;
+import com.rootstock.agent.dto.AgentResponse;
 import com.rootstock.chat.dto.ChatRequest;
 import com.rootstock.chat.dto.ChatResponse;
 import com.rootstock.conversation.Conversation;
@@ -25,8 +27,8 @@ import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseRe
  * query service -- works, but it puts try/finally scaffolding and attribute
  * plumbing into methods whose job is answering questions, and it spreads the
  * knowledge of what Langfuse wants across the codebase. Here, {@code ChatController},
- * {@code RagQueryService} and {@code BedrockKnowledgeBaseClient} are entirely
- * unaware they are traced.
+ * {@code RagQueryService}, {@code BedrockKnowledgeBaseClient} and the agent are
+ * entirely unaware they are traced.
  *
  * <p>Everything the spans need is derived from arguments and return values. That
  * is not a coincidence: {@code RagQueryResponse} already carries the
@@ -67,6 +69,14 @@ public class TracingAspect {
 
 	@Pointcut("execution(* com.rootstock.rag.vector.BedrockKnowledgeBaseClient.retrieve(..))")
 	void knowledgeBaseRetrieval() {
+	}
+
+	@Pointcut("execution(* com.rootstock.agent.AgentController.ask(..))")
+	void agentRun() {
+	}
+
+	@Pointcut("execution(* com.rootstock.agent.AgentToolbox.execute(..))")
+	void agentToolCall() {
 	}
 
 	@Pointcut("execution(* com.rootstock.conversation.ConversationService.resolve(..))")
@@ -162,6 +172,38 @@ public class TracingAspect {
 				});
 	}
 
+	/**
+	 * One trace per agent run. The Reason steps appear under it as generations
+	 * and the Act steps as tool spans (and retrievals beneath those), in the
+	 * order they happened -- the ReAct loop, read top to bottom. Advises the
+	 * controller rather than the service so the conversation is resolved inside
+	 * the span, where {@link #stampSession} can bind it.
+	 */
+	@Around("agentRun()")
+	public Object traceAgentRun(ProceedingJoinPoint joinPoint) throws Throwable {
+		Observation observation = trace.start("agent-run", RequestTrace.SURFACE_AGENT, null);
+		RequestTrace.type(observation, LangfuseAttributes.TYPE_AGENT);
+		AgentRequest request = argument(joinPoint, AgentRequest.class);
+		RequestTrace.input(observation, request != null ? request.message() : null);
+		try (Observation.Scope ignored = observation.openScope()) {
+			Object result = joinPoint.proceed();
+			if (result instanceof AgentResponse response) {
+				RequestTrace.output(observation, response.answer());
+				RequestTrace.metadata(observation, "iterations", String.valueOf(response.iterations()));
+				RequestTrace.metadata(observation, "toolCalls", String.valueOf(response.steps().size()));
+			}
+			return result;
+		}
+		catch (Throwable failure) {
+			observation.error(failure);
+			throw failure;
+		}
+		finally {
+			observation.stop();
+			TraceIdentity.clear();
+		}
+	}
+
 	// ---- enrichment ---------------------------------------------------------
 
 	/**
@@ -215,6 +257,35 @@ public class TracingAspect {
 				RequestTrace.output(observation, describeHits(hits));
 				RequestTrace.metadata(observation, "hitCount", String.valueOf(hits.size()));
 			}
+			return result;
+		}
+		catch (Throwable failure) {
+			observation.error(failure);
+			throw failure;
+		}
+		finally {
+			observation.stop();
+		}
+	}
+
+	// ---- tool span ----------------------------------------------------------
+
+	/**
+	 * Every agent tool runs through {@code AgentToolbox.execute}, so one advice
+	 * covers all of them. The name carries the tool -- a small, fixed set, so
+	 * it stays a usable filter rather than one category per trace.
+	 */
+	@Around("agentToolCall()")
+	public Object traceToolCall(ProceedingJoinPoint joinPoint) throws Throwable {
+		// execute(toolName, arguments, context)
+		Object[] args = joinPoint.getArgs();
+		Observation observation = Observation.createNotStarted("tool-" + args[0], observations);
+		RequestTrace.type(observation, LangfuseAttributes.TYPE_TOOL);
+		RequestTrace.input(observation, String.valueOf(args[1]));
+		observation.start();
+		try (Observation.Scope ignored = observation.openScope()) {
+			Object result = joinPoint.proceed();
+			RequestTrace.output(observation, result instanceof String text ? text : null);
 			return result;
 		}
 		catch (Throwable failure) {

@@ -44,6 +44,8 @@ public final class LangfuseAttributes {
 
 	public static final String TYPE_GENERATION = "generation";
 	public static final String TYPE_RETRIEVER = "retriever";
+	public static final String TYPE_AGENT = "agent";
+	public static final String TYPE_TOOL = "tool";
 
 	private LangfuseAttributes() {
 	}
