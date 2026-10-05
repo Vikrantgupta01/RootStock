@@ -9,9 +9,9 @@
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.rootstock</groupId>
-	<artifactId>backend</artifactId>
+	<artifactId>rootstock-core</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>backend</name>
+	<name>rootstock-core</name>
 	<description/>
 	<url/>
 	<licenses>

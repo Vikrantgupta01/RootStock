@@ -14,9 +14,9 @@ and test all of it, see **[TESTING.md](TESTING.md)**.
 
 ```
 RootStock/
-├── backend/     Spring Boot 4 · Java 21 · Maven · Spring AI (Bedrock Converse) · JPA · Flyway
-│   └── compose.yaml   local Postgres for app data (auto-started in dev by Spring Boot)
-└── frontend/    React 19 · TypeScript · Vite · React Router · TanStack Query
+├── rootstock-core/   Spring Boot 4 · Java 21 · Maven · Spring AI (Bedrock Converse) · JPA · Flyway
+│   └── compose.yaml     local Postgres for app data (auto-started in dev by Spring Boot)
+└── frontend/         React 19 · TypeScript · Vite · React Router · TanStack Query
 ```
 
 ## Prerequisites
@@ -32,17 +32,17 @@ RootStock/
 
 ### 1. Database
 
-Spring Boot's docker-compose integration starts `backend/compose.yaml`
+Spring Boot's docker-compose integration starts `rootstock-core/compose.yaml`
 automatically when you run the backend. To manage it by hand:
 
 ```bash
-docker compose -f backend/compose.yaml up -d
+docker compose -f rootstock-core/compose.yaml up -d
 ```
 
 ### 2. Backend
 
 ```bash
-cd backend
+cd rootstock-core
 # AWS credentials + region, and the Bedrock Knowledge Base / data source ids
 # (see Configuration below), are required for both /api/chat and the RAG
 # feature to actually do anything. A gitignored .env file works well for
@@ -71,7 +71,7 @@ is needed locally. For non-dev builds set `VITE_API_BASE_URL` (see `.env.example
 
 ## Configuration
 
-Backend config lives in `backend/src/main/resources/application.yml`. Key knobs
+Backend config lives in `rootstock-core/src/main/resources/application.yml`. Key knobs
 (all overridable by environment variable):
 
 | Property | Env var | Default |
@@ -290,7 +290,7 @@ doesn't need a schema/UI change to add them:
 ## Tests
 
 ```bash
-cd backend && ./mvnw test
+cd rootstock-core && ./mvnw test
 cd frontend && npm run build && npm run lint
 ```
 

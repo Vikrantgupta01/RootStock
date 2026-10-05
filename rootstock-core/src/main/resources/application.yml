@@ -117,7 +117,7 @@ info:
 rootstock:
   observability:
     langfuse:
-      # Keys live in backend/.env, never here -- application.yml is committed.
+      # Keys live in rootstock-core/.env, never here -- application.yml is committed.
       # Every value defaults to blank: a missing env var must not stop the app.
       enabled: ${LANGFUSE_ENABLED:true}
       # Neither of these is a secret: the host is a public endpoint and the flag

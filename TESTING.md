@@ -7,7 +7,7 @@ setup, layout, and configuration reference.
 ## 1. Automated tests
 
 ```bash
-cd backend  && ./mvnw test          # unit + slice + integration tests
+cd rootstock-core && ./mvnw test          # unit + slice + integration tests
 cd frontend && npm run build && npm run lint
 ```
 
@@ -67,7 +67,7 @@ AWS. Before running the stack for real, you need:
    when two uploads race and hit a sync conflict), and S3
    read/write/delete/list on the data source bucket.
 
-Put the resulting values in a gitignored `backend/.env` (auto-loaded if you
+Put the resulting values in a gitignored `rootstock-core/.env` (auto-loaded if you
 `set -a && source .env && set +a` before running):
 
 ```bash
@@ -91,7 +91,7 @@ SPRING_DOCKER_COMPOSE_ENABLED=false   # only needed if DB_URL points off-box --
 
 ```bash
 # terminal 1 — backend
-cd backend
+cd rootstock-core
 set -a && source .env && set +a
 ./mvnw spring-boot:run          # http://localhost:8080
 
@@ -99,7 +99,7 @@ set -a && source .env && set +a
 cd frontend && npm install && npm run dev     # http://localhost:5173
 ```
 
-If `SPRING_DOCKER_COMPOSE_ENABLED` isn't set to `false` and `backend/compose.yaml`
+If `SPRING_DOCKER_COMPOSE_ENABLED` isn't set to `false` and `rootstock-core/compose.yaml`
 exists with Docker running, Spring Boot's docker-compose auto-configuration
 will silently connect to that local Postgres instead of whatever `DB_URL`
 says — check the startup log's `Flyway ... Database:` line to see which one

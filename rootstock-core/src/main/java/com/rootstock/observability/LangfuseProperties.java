@@ -10,7 +10,7 @@ import org.springframework.util.StringUtils;
  *
  * <p>Unlike the Cognito ids in {@link com.rootstock.auth.AuthProperties}, the
  * secret key is a real credential and carries no default -- it comes from
- * {@code backend/.env}, never from the committed {@code application.yml}. Every
+ * {@code rootstock-core/.env}, never from the committed {@code application.yml}. Every
  * field defaults to blank rather than being required, so an environment that
  * knows nothing about Langfuse still starts: an unresolvable placeholder is the
  * one thing that would stop it.

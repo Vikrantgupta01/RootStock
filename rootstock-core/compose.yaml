@@ -23,7 +23,7 @@ services:
       retries: 10
 
   # S3-compatible object store for the RAG blob backend. Opt-in:
-  #   docker compose -f backend/compose.yaml --profile s3 up -d
+  #   docker compose -f rootstock-core/compose.yaml --profile s3 up -d
   # then run the app with RAG_BLOB_BACKEND=s3 RAG_S3_ENDPOINT=http://localhost:9000
   # AWS_ACCESS_KEY_ID=rootstock AWS_SECRET_ACCESS_KEY=rootstock123
   minio:

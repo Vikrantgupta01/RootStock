@@ -1,4 +1,4 @@
-# Root-level ignores. Module-specific ignores live in backend/.gitignore and
+# Root-level ignores. Module-specific ignores live in rootstock-core/.gitignore and
 # frontend/.gitignore.
 
 # OS / editor
@@ -21,4 +21,4 @@ node_modules/
 *.log
 
 # RAG local blob storage (filesystem backend)
-backend/data/
+rootstock-core/data/
