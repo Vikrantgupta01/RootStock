@@ -25,6 +25,9 @@ export function AppShell({ children, wide = false }: { children: ReactNode; wide
             <NavLink to="/" end className={({ isActive }) => (isActive ? 'is-active' : '')}>
               Chat
             </NavLink>
+            <NavLink to="/agent" className={({ isActive }) => (isActive ? 'is-active' : '')}>
+              Agent
+            </NavLink>
             <NavLink to="/knowledge" className={({ isActive }) => (isActive ? 'is-active' : '')}>
               Knowledge base
             </NavLink>

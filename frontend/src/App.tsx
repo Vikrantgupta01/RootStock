@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { LoginScreen } from './components/LoginScreen'
 import { useCurrentUser, useHasSession } from './hooks/useSession'
+import { AgentPage } from './pages/AgentPage'
 import { ChatPage } from './pages/ChatPage'
 import { KnowledgePage } from './pages/KnowledgePage'
 
@@ -23,6 +24,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<ChatPage />} />
+      <Route path="/agent" element={<AgentPage />} />
       <Route path="/knowledge" element={<KnowledgePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

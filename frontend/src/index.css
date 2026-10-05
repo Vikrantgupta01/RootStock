@@ -531,6 +531,94 @@ textarea {
   cursor: default;
 }
 
+/* agent ------------------------------------------------------------------ */
+
+.agent__thinking {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.agent__summary {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  width: fit-content;
+}
+
+.agent__summary--plain {
+  cursor: default;
+  color: var(--ink-faint);
+}
+
+.agent__trace[open] .agent__summary {
+  color: var(--ink);
+  margin-bottom: 0.4rem;
+}
+
+.agent__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.agent__step {
+  border-left: 2px solid var(--accent);
+  padding: 0.1rem 0 0.1rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.86rem;
+}
+
+/* Reset the chat bubble styling that .chat__turn p would otherwise apply. */
+.chat__turn .agent__step p {
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+.agent__thought {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+.agent__call code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.agent__label {
+  display: inline-block;
+  min-width: 5.5rem;
+  margin-right: 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.agent__observation pre {
+  margin: 0.25rem 0 0;
+  padding: 0.55rem 0.7rem;
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  background: var(--bg-tint);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
 /* auth ------------------------------------------------------------------- */
 
 .login h2 {

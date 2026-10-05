@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useChat, useChatTranscript, useDeleteChatConversation } from '../hooks/useChat'
+import { rememberConversation, rememberedConversation } from '../lib/activeConversation'
 
 interface Turn {
   role: 'user' | 'assistant'
@@ -10,27 +11,12 @@ interface Turn {
 /** Which thread this browser was last in. The history itself lives on the server. */
 const ACTIVE_KEY = 'rootstock.chat.conversation'
 
-function rememberedConversation(): string | null {
-  try {
-    return localStorage.getItem(ACTIVE_KEY)
-  } catch {
-    return null
-  }
-}
-
-function remember(id: string | null) {
-  try {
-    if (id) localStorage.setItem(ACTIVE_KEY, id)
-    else localStorage.removeItem(ACTIVE_KEY)
-  } catch {
-    // ignore: storage may be unavailable
-  }
-}
-
 export function ChatWindow() {
   const [input, setInput] = useState('')
   const [turns, setTurns] = useState<Turn[]>([])
-  const [conversationId, setConversationId] = useState<string | null>(rememberedConversation)
+  const [conversationId, setConversationId] = useState<string | null>(() =>
+    rememberedConversation(ACTIVE_KEY),
+  )
   const chat = useChat()
   const remove = useDeleteChatConversation()
   const stored = useChatTranscript(conversationId)
@@ -45,7 +31,7 @@ export function ChatWindow() {
 
   function open(id: string | null) {
     setConversationId(id)
-    remember(id)
+    rememberConversation(ACTIVE_KEY, id)
     if (!id) setTurns([])
   }
 

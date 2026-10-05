@@ -1,4 +1,4 @@
-// Conversation threads, shared by the plain chat and the RAG playground. The
+// Conversation threads, shared by the plain chat, the RAG playground and the agent. The
 // backend owns the history; the client only ever holds the thread's id.
 
 import { request } from './http'
@@ -18,7 +18,7 @@ export interface ConversationMessage {
   createdAt: string
 }
 
-/** `base` is '/api/chat' or '/api/rag' -- the two keep separate threads. */
+/** `base` is '/api/chat', '/api/rag' or '/api/agent' -- each keeps its own threads. */
 export function conversations(base: string) {
   return {
     list: () => request<ConversationSummary[]>(`${base}/conversations`),
