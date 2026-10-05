@@ -1,20 +1,26 @@
 # RootStock
 
 AI-powered web app. Java 21 / Spring Boot backend with Spring AI wired to **AWS
-Bedrock** for chat, a local PostgreSQL database for app data (documents,
+Bedrock**, a PostgreSQL database for app data (conversations, documents,
 profiles, jobs), and a React + TypeScript frontend.
 
-Ships a `Customer` CRUD sample and a tenant-scoped **knowledge base / RAG**
-subsystem backed by an **AWS Bedrock Knowledge Base** (Aurora PostgreSQL
-Serverless v2 as the vector store) — document ingestion, tunable query
-profiles, grounded query with optional reranking — see below. For how to run
-and test all of it, see **[TESTING.md](TESTING.md)**.
+Three AI surfaces, each with its own server-side conversation history:
+
+| Surface | Endpoint | What it does |
+|---|---|---|
+| **Chat** | `POST /api/chat` | Plain assistant: one model call per message, optionally streamed. |
+| **Knowledge base / RAG** | `POST /api/rag/query` | Fixed pipeline over a tenant-scoped **AWS Bedrock Knowledge Base**: rewrite the follow-up → retrieve once → answer with citations. Document ingestion, tunable query profiles, optional reranking. |
+| **Agent** | `POST /api/agent` | A **ReAct agent** built with **LangGraph4j**: the model decides whether to search the knowledge base, with what wording and how many times, before answering — and returns the steps it took. |
+
+Also ships a `Customer` CRUD sample, Cognito authentication with roles and
+access groups, and LLM tracing to **Langfuse**. For how to run and test all of
+it, see **[TESTING.md](TESTING.md)**.
 
 ## Layout
 
 ```
 RootStock/
-├── rootstock-core/   Spring Boot 4 · Java 21 · Maven · Spring AI (Bedrock Converse) · JPA · Flyway
+├── rootstock-core/   Spring Boot 4 · Java 21 · Maven · Spring AI 2 (Bedrock Converse) · LangGraph4j · JPA · Flyway
 │   └── compose.yaml     local Postgres for app data (auto-started in dev by Spring Boot)
 └── frontend/         React 19 · TypeScript · Vite · React Router · TanStack Query
 ```
@@ -24,9 +30,10 @@ RootStock/
 | Tool | Version | Notes |
 |---|---|---|
 | JDK | 21+ | Project targets Java 21; a newer JDK on `PATH` is fine. |
+| Maven | 3.9+ | The repo has no Maven wrapper script, so use an installed `mvn`. |
 | Node.js | 20+ | For the frontend. |
 | Docker | any recent | Runs the local app-data Postgres; also used by the integration tests. |
-| AWS account + credentials | — | Required for **both** chat and the RAG feature — there's no offline/fake mode for either anymore. Needs a Bedrock Knowledge Base (Aurora PostgreSQL vector store) already provisioned, an S3 bucket as its data source, model access for the configured chat model, and an IAM identity with the narrow set of Bedrock/S3 permissions the app needs (see `rootstock-rag-app-policy` pattern — never run this as an AWS root/admin identity). Provide credentials via the standard AWS chain (an SSO/named profile is the simplest for local dev). |
+| AWS account + credentials | — | Required for chat, the agent and the RAG feature — there's no offline/fake mode for either anymore. Needs a Bedrock Knowledge Base (Aurora PostgreSQL vector store) already provisioned, an S3 bucket as its data source, model access for the configured chat model, and an IAM identity with the narrow set of Bedrock/S3 permissions the app needs (see `rootstock-rag-app-policy` pattern — never run this as an AWS root/admin identity). Provide credentials via the standard AWS chain (an SSO/named profile is the simplest for local dev). |
 
 ## Run it
 
@@ -44,10 +51,11 @@ docker compose -f rootstock-core/compose.yaml up -d
 ```bash
 cd rootstock-core
 # AWS credentials + region, and the Bedrock Knowledge Base / data source ids
-# (see Configuration below), are required for both /api/chat and the RAG
-# feature to actually do anything. A gitignored .env file works well for
-# local dev -- see TESTING.md.
-./mvnw spring-boot:run
+# (see Configuration below), are required for chat, the agent and RAG to
+# actually do anything. A gitignored rootstock-core/.env works well for local
+# dev -- see TESTING.md:
+#   set -a && source .env && set +a
+mvn spring-boot:run
 ```
 
 - `GET  http://localhost:8080/api/health` → `{ "status": "UP", ... }`
@@ -57,6 +65,11 @@ cd rootstock-core
   AWS Bedrock is configured). Send that `conversationId` back to continue the
   thread — see [Conversations](#conversations).
 - `POST http://localhost:8080/api/chat` with `Accept: text/event-stream` → token stream
+- `POST http://localhost:8080/api/agent` with `{ "message": "..." }` →
+  `{ "answer": "...", "conversationId": "...", "iterations": 2, "steps": [...] }` — see [Agent](#agent)
+- `POST http://localhost:8080/api/rag/query` — see [Knowledge base / RAG](#knowledge-base--rag)
+
+All of these except `/api/health` need a Cognito ID token — see [Authentication](#authentication).
 
 ### 3. Frontend
 
@@ -68,6 +81,8 @@ npm run dev        # http://localhost:5173
 
 The Vite dev server proxies `/api/*` to `http://localhost:8080`, so no CORS setup
 is needed locally. For non-dev builds set `VITE_API_BASE_URL` (see `.env.example`).
+
+Pages: **Chat** (`/`), **Agent** (`/agent`) and **Knowledge base** (`/knowledge`).
 
 ## Configuration
 
@@ -84,6 +99,11 @@ Backend config lives in `rootstock-core/src/main/resources/application.yml`. Key
 | `rootstock.rag.bedrock.data-source-id` | `RAG_BEDROCK_DATA_SOURCE_ID` | _(your Knowledge Base's S3 data source id)_ |
 | `rootstock.rag.blob.backend` | `RAG_BLOB_BACKEND` | `s3` (real AWS S3 — required; see below) |
 | `rootstock.rag.blob.s3.bucket` | `RAG_S3_BUCKET` | the S3 bucket your Knowledge Base's data source reads from |
+| `rootstock.agent.max-iterations` | `AGENT_MAX_ITERATIONS` | `6` (Reason steps — model calls — per agent question) |
+| `rootstock.observability.langfuse.enabled` | `LANGFUSE_ENABLED` | `true` (no-op until both keys are set) |
+| `rootstock.observability.langfuse.host` | `LANGFUSE_HOST` / `LANGFUSE_BASE_URL` | `https://us.cloud.langfuse.com` |
+| `rootstock.observability.langfuse.public-key` / `.secret-key` | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | _(blank — keep in `.env`)_ |
+| `management.tracing.sampling.probability` | `LANGFUSE_SAMPLE_RATE` | `1.0` |
 | `rootstock.cors.allowed-origins` | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` |
 
 > Set `BEDROCK_MODEL` to a model or inference-profile id your AWS account has
@@ -164,7 +184,7 @@ self-service sign-up.
 
 ## Conversations
 
-Both `/api/chat` and `/api/rag/query` are conversational. Send the
+`/api/chat`, `/api/rag/query` and `/api/agent` are all conversational. Send the
 `conversationId` from a response back with the next message to continue the
 thread; omit it to start a new one. History is **stored server-side** (the
 `conversation` and `chat_message` tables), so it survives a page refresh, a
@@ -173,19 +193,24 @@ the token, which a client-supplied transcript could be.
 
 A thread belongs to one person: every lookup is by (id, tenant, Cognito `sub`)
 together, so an id from somewhere else resolves to a 404 rather than to someone
-else's conversation. Chat and RAG threads are kept apart — they answer under
-different prompts, so continuing one as the other is a 400.
+else's conversation. Chat, RAG and agent threads are kept apart (the
+conversation's `kind`) — they answer under different prompts, so continuing one
+as another is a 400.
 
-- `GET /api/chat/conversations`, `GET /api/rag/conversations` — your threads,
-  newest activity first, titled from their opening message.
+- `GET /api/chat/conversations`, `GET /api/rag/conversations`,
+  `GET /api/agent/conversations` — your threads, newest activity first, titled
+  from their opening message.
 - `GET …/conversations/{id}` — the stored transcript.
 - `DELETE …/conversations/{id}` — messages cascade.
 
-**Only the last 20 turns** ride along with a new message
-(`ConversationService.HISTORY_TURNS`). That's a cost and context-window bound,
-not a nicety: every turn is re-sent on every request and Bedrock charges for all
-of it. The cut always lands on a turn boundary, so the model never sees an
-answer whose question was dropped.
+Only the question and the final answer of each exchange are stored — not RAG
+citations, not the agent's intermediate steps.
+
+**Only the last 20 messages** (about 10 question/answer exchanges) ride along
+with a new message (`ConversationService.HISTORY_TURNS`). That's a cost and
+context-window bound, not a nicety: every message is re-sent on every request
+and Bedrock charges for all of it. The cut never leaves an answer at the start
+whose question was dropped.
 
 **RAG follow-ups get rewritten before retrieval.** Similarity search only sees
 the text it's given, so *"and what about its price?"* would match nothing —
@@ -195,6 +220,68 @@ says what was actually searched for, so the rewrite is inspectable rather than
 invisible. It costs one extra model call per follow-up, and none on the first
 message of a thread. The answer is still generated against the question as
 typed; only retrieval uses the rewrite.
+
+## Agent
+
+`POST /api/agent` `{ message, conversationId? }` runs a **ReAct** (Reason + Act)
+agent. Instead of a fixed pipeline, the model decides what to do next: call a
+tool, read the result, then call another or answer. The loop is an explicit
+[LangGraph4j](https://github.com/langgraph4j/langgraph4j) state graph
+(`com.rootstock.agent.AgentGraph`):
+
+```
+START → agent (Reason) ──asks for tools?──yes→ tools (Act + Observe) ─┐
+           ▲                                                            │
+           └────────────────────────────────────────────────────────────┘
+           └─no, or out of iterations→ END
+```
+
+- **agent** — one Bedrock call with the transcript and the tool definitions.
+  The model either requests tool calls or answers.
+- **tools** — runs every requested call and appends the results for the next
+  Reason step. A failing or unknown tool comes back to the model as an error
+  message it can react to, rather than failing the request.
+- The loop stops after `rootstock.agent.max-iterations` Reason steps (default
+  6); the last step is told to answer with what it has.
+
+**Tools** (`AgentTools`):
+
+| Tool | Does |
+|---|---|
+| `searchKnowledgeBase(query)` | Searches the Bedrock Knowledge Base with the **same tenant, active-version and access-group filter** as `/api/rag/query`, so the agent can't see — or leak — what the caller can't. Returns numbered passages with their source document. Uses the `rootstock.rag.defaults` top-k and threshold, not a RAG profile, and no reranker. |
+| `currentDateTime()` | Current UTC date, time and weekday. |
+
+Adding a tool is a `@Tool` method on `AgentTools`; it's offered to the model
+automatically.
+
+**Response**: `{ answer, conversationId, iterations, steps[] }`, where each step
+is `{ iteration, thought, tool, input, observation }` — what the model said it
+needed, which tool it called with what arguments, and what came back
+(abbreviated to 1,000 characters; the model saw it in full). History keeps only
+the question and the final answer.
+
+**Which surface to use**: the agent costs more (one model call per Reason step)
+and is less predictable than `/api/rag/query`, but it can search more than once,
+reword a search that missed, and combine sources. Prefer RAG when you want fixed
+cost, profile-tuned retrieval and structured citations.
+
+**Implementation notes**:
+- The graph calls Spring AI's `ChatModel` directly, not `ChatClient`. In
+  Spring AI 2 a `ChatModel` returns tool calls unexecuted, while `ChatClient`
+  adds an advisor that runs the whole tool loop itself — the loop this graph
+  exists to make explicit.
+- LangGraph4j's state cloning (for checkpoints) is turned off: it uses Java
+  serialization, which Spring AI messages don't support, and no checkpointer is
+  used.
+- LangGraph4j runs nodes on `ForkJoinPool.commonPool`. Tenant and groups reach
+  the tools through Spring AI's `ToolContext`, captured on the request thread,
+  and the tracing context is restored around each node so the run stays one
+  Langfuse trace.
+
+**Frontend** — the `/agent` page: chat layout, with each answer carrying a
+collapsed *"N tool calls · M steps"* summary that expands into the Reason / Act /
+Observe trail. Steps are only shown for answers given in the current page view,
+since the server doesn't store them.
 
 ## Knowledge base / RAG
 
@@ -272,6 +359,27 @@ sign-out button. The tenant is no longer typed in — it comes from the token.
 Viewers don't see the upload dropzone or the version actions; only admins see
 the **Tuning** and **Access** tabs.
 
+## Observability (Langfuse)
+
+LLM work is traced to [Langfuse](https://langfuse.com) over OpenTelemetry (OTLP
+over HTTP). Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in
+`rootstock-core/.env`. Without both keys, OpenTelemetry stays switched off
+entirely, so a key-less environment exports nothing and logs nothing.
+
+All tracing lives in `com.rootstock.observability.TracingAspect`, as aspects, so
+the traced code doesn't know it's traced. One trace per request:
+
+| Trace | Contains |
+|---|---|
+| `chat-response` | the Bedrock generation (model, tokens, cost) |
+| `answer-question` (RAG) | the condense generation (follow-ups only), `retrieve-context` (query, hits, scores), the answer generation |
+| `agent-run` | per Reason step a generation, per Act step a `tool-<name>` span (and `retrieve-context` under knowledge-base searches) |
+
+Each trace carries the conversation as its Langfuse **session**, the Cognito
+`sub` as its **user** (not the email), and tenant/role/model as metadata.
+Framework spans (HTTP server, Spring Security, scheduled tasks) are suppressed
+so the application's span is always the trace root.
+
 ## Roadmap
 
 Not yet functional, but with groundwork already in place so a future release
@@ -287,15 +395,26 @@ doesn't need a schema/UI change to add them:
   retrieved chunks in `RagQueryService.renderContext()` against a token
   budget instead of concatenating everything retrieved.
 
+Agent follow-ups worth doing:
+
+- **Persist agent steps** with the answer, so they survive a page reload.
+- **Stream** the steps and answer as they happen, instead of returning
+  everything at the end.
+- **Use the active RAG profile** (top-k, threshold, reranker) for
+  `searchKnowledgeBase`, instead of the global defaults.
+
 ## Tests
 
 ```bash
-cd rootstock-core && ./mvnw test
+cd rootstock-core && mvn test       # needs Docker for the Testcontainers suites
 cd frontend && npm run build && npm run lint
 ```
 
 See **[TESTING.md](TESTING.md)** for what each suite covers and a full manual
-walkthrough (API + UI) of the Customer and RAG features.
+walkthrough (API + UI) of the Customer and RAG features. The agent's graph
+(`AgentGraphTest`) is tested against a scripted model — the Reason/Act/Observe
+loop, the iteration cap, unknown tools, and that the trace context reaches the
+worker thread.
 
 ## Not yet included
 
