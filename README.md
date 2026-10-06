@@ -16,12 +16,19 @@ Also ships a `Customer` CRUD sample, Cognito authentication with roles and
 access groups, and LLM tracing to **Langfuse**. For how to run and test all of
 it, see **[TESTING.md](TESTING.md)**.
 
+The work follows the iterations in **[docs/design.md](docs/design.md)**. The
+first demo domain, a dummy St Vincent de Paul (Vinnies) app that exposes MCP
+tools, lives in **[vinnies/](vinnies/README.md)**, with its own run steps.
+
 ## Layout
 
 ```
 RootStock/
 ├── rootstock-core/   Spring Boot 4 · Java 21 · Maven · Spring AI 2 (Bedrock Converse) · LangGraph4j · JPA · Flyway
-└── frontend/         React 19 · TypeScript · Vite · React Router · TanStack Query
+├── frontend/         React 19 · TypeScript · Vite · React Router · TanStack Query
+├── vinnies/          Vinnies demo domain (fictional data); never referenced by rootstock-core
+│   └── vinnies-mcp-server/   dummy Vinnies app exposing MCP tools (find_household, …)
+└── docs/design.md    Sinew Rootstock design and iteration plan
 ```
 
 ## Prerequisites

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<!-- Pinned to the same Spring Boot as Rootstock. -->
+		<version>4.1.1</version>
+		<relativePath/>
+	</parent>
+	<groupId>com.sinewlabs.vinnies</groupId>
+	<artifactId>vinnies-mcp-server</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<name>vinnies-mcp-server</name>
+	<description>Dummy Vinnies application exposing its functions as MCP tools. All data is fictional.</description>
+
+	<properties>
+		<java.version>21</java.version>
+		<!-- Pinned to the same Spring AI as Rootstock. -->
+		<spring-ai.version>2.0.1</spring-ai.version>
+	</properties>
+
+	<dependencies>
+		<dependency>
+			<!-- MCP server over HTTP on Spring MVC. -->
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jpa</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.springframework.ai</groupId>
+				<artifactId>spring-ai-bom</artifactId>
+				<version>${spring-ai.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<!-- Integration tests (*IT) run against RDS in `mvn verify`, after the
+				     unit tests; `mvn test` stays fast and needs no AWS. Executions are
+				     configured by spring-boot-starter-parent. -->
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+			</plugin>
+		</plugins>
+	</build>
+</project>

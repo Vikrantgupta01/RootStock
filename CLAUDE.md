@@ -1,6 +1,11 @@
 # RootStock — working rules
 
-Monorepo: `rootstock-core/` (Spring Boot backend, Maven) and `frontend/` (React 19 + Vite).
+Monorepo, each folder built on its own (no root POM):
+
+- `rootstock-core/` — the domain-agnostic framework (Spring Boot backend, Maven).
+- `frontend/` — React 19 + Vite.
+- `vinnies/` — the Vinnies demo domain: `vinnies-mcp-server/` (dummy client app exposing MCP
+  tools, own database `vinnies_mock`). Its own Maven project; see `vinnies/CLAUDE.md`.
 
 ## Pinned versions
 
@@ -29,7 +34,8 @@ Do not change these without explicit approval.
   afterwards. They never touch the application's own schema.
 - **Tests that call Bedrock are tagged `live`** (`@Tag("live")`), so they can be included
   or excluded explicitly.
-- **RootStock contains no Vinnies code.**
+- **`rootstock-core` contains no Vinnies code and never references `vinnies/`.** All Vinnies
+  code lives under `vinnies/`, which may depend on Rootstock but never the reverse.
 - **`core` never depends on `autoconfig` or `runtime`** (see the package plan below).
 - **No writes without approval.** Ask before committing, pushing, or changing anything
   outside the working tree. That includes AWS resources (RDS data or schema, Cognito users

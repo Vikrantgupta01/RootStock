@@ -1,0 +1,49 @@
+# One configuration, no profiles. Settings come from environment variables,
+# loaded from the gitignored .env (names listed in .env.example). There are no
+# local defaults for the database: without VINNIES_DB_* the app refuses to start
+# rather than quietly connecting somewhere else.
+
+spring:
+  application:
+    name: vinnies-mcp-server
+
+  datasource:
+    url: ${VINNIES_DB_URL}
+    username: ${VINNIES_DB_USERNAME}
+    password: ${VINNIES_DB_PASSWORD}
+    hikari:
+      # Every connection works inside the app's own schema, never public. It
+      # shares RootStock's database for the demo (see db/setup.sql).
+      # Integration tests point it at a throwaway schema instead.
+      schema: ${VINNIES_DB_SCHEMA:vinnies_mock}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Tables come from db/setup.sql, run by hand; the app never creates or
+      # alters them. validate fails startup if they are missing or differ.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: ${VINNIES_DB_SCHEMA:vinnies_mock}
+
+  ai:
+    mcp:
+      server:
+        # Checked against Spring AI 2.0.1 (spring-ai-autoconfigure-mcp-server-common
+        # metadata): protocol SSE | STREAMABLE | STATELESS; type SYNC | ASYNC;
+        # @McpTool methods on Spring beans are picked up by the annotation scanner,
+        # which is on by default.
+        name: vinnies
+        version: 0.1.0
+        protocol: STREAMABLE
+        type: SYNC
+        instructions: >
+          Dummy St Vincent de Paul (Vinnies) application. All data is fictional.
+          Tools are small and read-only unless stated otherwise.
+        streamable-http:
+          mcp-endpoint: /mcp
+
+server:
+  # 8080 is Rootstock's; this server sits beside it.
+  port: ${VINNIES_MCP_PORT:8081}
