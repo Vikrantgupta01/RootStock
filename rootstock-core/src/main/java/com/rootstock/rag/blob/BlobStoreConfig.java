@@ -15,9 +15,8 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 /**
  * Selects the {@link BlobStore} implementation from
  * {@code rootstock.rag.blob.backend} ({@code filesystem} by default, or
- * {@code s3}). The S3 client honours an optional custom endpoint so MinIO /
- * LocalStack work in local development; credentials come from the default AWS
- * provider chain.
+ * {@code s3}). The S3 client honours an optional custom endpoint; credentials
+ * come from the default AWS provider chain.
  */
 @Configuration(proxyBeanMethods = false)
 public class BlobStoreConfig {

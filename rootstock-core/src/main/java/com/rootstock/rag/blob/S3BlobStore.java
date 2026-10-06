@@ -16,8 +16,8 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 /**
- * S3-backed {@link BlobStore}. Works against real AWS or an S3-compatible
- * endpoint (MinIO/LocalStack) configured via {@code rootstock.rag.blob.s3.*}.
+ * S3-backed {@link BlobStore}, configured via {@code rootstock.rag.blob.s3.*}
+ * (bucket, region, and an optional custom endpoint).
  */
 public class S3BlobStore implements BlobStore {
 

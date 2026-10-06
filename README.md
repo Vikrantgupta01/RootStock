@@ -21,7 +21,6 @@ it, see **[TESTING.md](TESTING.md)**.
 ```
 RootStock/
 ├── rootstock-core/   Spring Boot 4 · Java 21 · Maven · Spring AI 2 (Bedrock Converse) · LangGraph4j · JPA · Flyway
-│   └── compose.yaml     local Postgres for app data (auto-started in dev by Spring Boot)
 └── frontend/         React 19 · TypeScript · Vite · React Router · TanStack Query
 ```
 
@@ -32,19 +31,17 @@ RootStock/
 | JDK | 21+ | Project targets Java 21; a newer JDK on `PATH` is fine. |
 | Maven | 3.9+ | The repo has no Maven wrapper script, so use an installed `mvn`. |
 | Node.js | 20+ | For the frontend. |
-| Docker | any recent | Runs the local app-data Postgres; also used by the integration tests. |
+| PostgreSQL on AWS RDS/Aurora | — | The app's own database (conversations, documents, profiles, jobs). Flyway creates and migrates the tables on startup. There's no local database. |
 | AWS account + credentials | — | Required for chat, the agent and the RAG feature — there's no offline/fake mode for either anymore. Needs a Bedrock Knowledge Base (Aurora PostgreSQL vector store) already provisioned, an S3 bucket as its data source, model access for the configured chat model, and an IAM identity with the narrow set of Bedrock/S3 permissions the app needs (see `rootstock-rag-app-policy` pattern — never run this as an AWS root/admin identity). Provide credentials via the standard AWS chain (an SSO/named profile is the simplest for local dev). |
 
 ## Run it
 
 ### 1. Database
 
-Spring Boot's docker-compose integration starts `rootstock-core/compose.yaml`
-automatically when you run the backend. To manage it by hand:
-
-```bash
-docker compose -f rootstock-core/compose.yaml up -d
-```
+Point `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` at your RDS/Aurora PostgreSQL
+database (in `rootstock-core/.env`). There is nothing to start locally: Flyway
+applies the migrations in `src/main/resources/db/migration` when the backend
+starts.
 
 ### 2. Backend
 
@@ -406,12 +403,14 @@ Agent follow-ups worth doing:
 ## Tests
 
 ```bash
-cd rootstock-core && mvn test       # needs Docker for the Testcontainers suites
+cd rootstock-core && mvn test       # unit + controller slice tests; no database or AWS needed
 cd frontend && npm run build && npm run lint
 ```
 
 See **[TESTING.md](TESTING.md)** for what each suite covers and a full manual
-walkthrough (API + UI) of the Customer and RAG features. The agent's graph
+walkthrough (API + UI) of the Customer and RAG features. There are no
+integration tests at the moment; they were removed with Docker and will
+return on a throwaway RDS schema. The agent's graph
 (`AgentGraphTest`) is tested against a scripted model — the Reason/Act/Observe
 loop, the iteration cap, unknown tools, and that the trace context reaches the
 worker thread.

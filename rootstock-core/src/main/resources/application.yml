@@ -146,9 +146,8 @@ rootstock:
       client-id: ${COGNITO_CLIENT_ID:129t4ms9c91dgdmu77rpf2r0ug}
   rag:
     blob:
-      # filesystem (no infra) or s3 (default -- real AWS, or MinIO/LocalStack via
-      # endpoint). Bedrock Knowledge Base ingestion requires real S3, so this app
-      # defaults to it; override to filesystem for offline/no-AWS local dev.
+      # s3 (default) or filesystem. Bedrock Knowledge Base ingestion reads from
+      # real S3, so documents stored on the filesystem are never indexed.
       backend: ${RAG_BLOB_BACKEND:s3}
       filesystem:
         dir: ${RAG_BLOB_DIR:./data/blobs}

@@ -7,37 +7,24 @@ setup, layout, and configuration reference.
 ## 1. Automated tests
 
 ```bash
-cd rootstock-core && ./mvnw test          # unit + slice + integration tests
+cd rootstock-core && mvn test             # unit + controller slice tests
 cd frontend && npm run build && npm run lint
 ```
 
-- Controller slice tests (`*ControllerTest`) need neither Docker nor AWS. They
-  run with the security filter chain switched off (`addFilters = false`): it
-  isn't in a `@WebMvcTest` context, and `@PreAuthorize` sits on the services
-  they mock, so there'd be nothing to enforce.
-- Integration tests (`RootStockApplicationTests`, `CustomerRepositoryTest`,
-  `RagIngestionIntegrationTest`, `RagQueryIntegrationTest`,
-  `RagAccessControlIntegrationTest`, `ConversationIntegrationTest`) run against a
-  Testcontainers Postgres (app bookkeeping only — no vector data lives there;
-  that's Bedrock's Aurora) and **skip automatically** when Docker isn't
-  running.
-- `BedrockKnowledgeBaseClient` is mocked in every RAG integration test — there's
-  no local/Testcontainers stand-in for a real Bedrock Knowledge Base, so these
-  cover the document/version/job bookkeeping and the S3-sidecar contract, not
-  Bedrock itself.
-- `RagQueryIntegrationTest` also stubs the chat model, so the full
-  grounded-answer path is covered without live AWS credentials.
-- `RagAccessControlIntegrationTest` covers the permission model: the 401s, the
-  role boundaries, the `access_groups` attribute reaching the S3 sidecar, and
-  the per-caller `RetrievalFilter`. Authentication is simulated with
-  `TestTokens`, which mints the same claims a real Cognito ID token carries, so
-  requests take the same path through the filter chain without a network call.
-  The group boundary itself is enforced inside Bedrock, which is mocked — see
-  §4 for the live pass.
-- `ConversationIntegrationTest` stubs a chat model that *records every prompt*,
-  which is the only way to tell "the history was loaded" from "the history was
-  loaded and then not sent" — the reply alone looks the same either way. It also
-  covers thread ownership and the chat/RAG kind boundary.
+The automated suite needs neither a database nor AWS: nothing in it connects
+to anything.
+
+- Controller slice tests (`*ControllerTest`) run with the security filter chain
+  switched off (`addFilters = false`): it isn't in a `@WebMvcTest` context, and
+  `@PreAuthorize` sits on the services they mock, so there'd be nothing to
+  enforce.
+- `AgentGraphTest` and `AgentToolsTest` drive the agent against a scripted chat
+  model and mocked knowledge-base dependencies.
+- **There are no integration tests right now.** The Testcontainers-based ones
+  were removed along with Docker. When they come back they'll run against a
+  throwaway schema in RDS (see `CLAUDE.md`). Until then, the database,
+  Cognito, permission and Bedrock paths are covered only by the manual
+  walkthrough below.
 
 ## 2. One-time AWS setup (required — there's no offline mode)
 
@@ -77,14 +64,10 @@ RAG_BEDROCK_KB_ID=<knowledge-base-id>
 RAG_BEDROCK_DATA_SOURCE_ID=<data-source-id>
 RAG_S3_BUCKET=<the-data-source-bucket>
 BEDROCK_MODEL=<an-active-chat-model-id>
-# Only if the app's own DB lives on Aurora too rather than local Postgres:
+# The app's own database (PostgreSQL on RDS/Aurora):
 DB_URL=jdbc:postgresql://<host>:5432/<db>
 DB_USERNAME=<user>
 DB_PASSWORD=<password>
-SPRING_DOCKER_COMPOSE_ENABLED=false   # only needed if DB_URL points off-box --
-                                       # Spring Boot's docker-compose support
-                                       # otherwise silently overrides it with
-                                       # the local compose.yaml Postgres
 ```
 
 ## 3. Run the stack
@@ -93,17 +76,14 @@ SPRING_DOCKER_COMPOSE_ENABLED=false   # only needed if DB_URL points off-box --
 # terminal 1 — backend
 cd rootstock-core
 set -a && source .env && set +a
-./mvnw spring-boot:run          # http://localhost:8080
+mvn spring-boot:run             # http://localhost:8080
 
 # terminal 2 — frontend
 cd frontend && npm install && npm run dev     # http://localhost:5173
 ```
 
-If `SPRING_DOCKER_COMPOSE_ENABLED` isn't set to `false` and `rootstock-core/compose.yaml`
-exists with Docker running, Spring Boot's docker-compose auto-configuration
-will silently connect to that local Postgres instead of whatever `DB_URL`
-says — check the startup log's `Flyway ... Database:` line to see which one
-actually got used.
+The startup log's `Flyway ... Database:` line shows which database the app
+actually connected to.
 
 ## 4. Manual API test
 
