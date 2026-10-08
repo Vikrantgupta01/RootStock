@@ -4,7 +4,9 @@ import static com.sinewlabs.vinnies.mcp.household.Relationship.CHILD;
 import static com.sinewlabs.vinnies.mcp.household.Relationship.PARTNER;
 import static com.sinewlabs.vinnies.mcp.household.Relationship.PRIMARY_CONTACT;
 
+import com.sinewlabs.vinnies.mcp.ClockConfig;
 import com.sinewlabs.vinnies.mcp.demodata.DemoData.AssistanceRow;
+import com.sinewlabs.vinnies.mcp.demodata.DemoData.GuidelineRow;
 import com.sinewlabs.vinnies.mcp.demodata.DemoData.HouseholdRow;
 import com.sinewlabs.vinnies.mcp.demodata.DemoData.PersonRow;
 import com.sinewlabs.vinnies.mcp.demodata.DemoData.ServiceRow;
@@ -24,7 +26,8 @@ import java.util.UUID;
 
 /**
  * Generates the fictional Vinnies data set: about 50 households, 200 assistance
- * records and 40 local services across Sydney suburbs.
+ * records and 40 local services across Sydney suburbs, plus the assistance
+ * guidelines (one per type).
  *
  * <p>Repeatable by construction: one fixed random seed, ids derived from each
  * row's ref (name-based UUIDs), and every date measured back from {@code today}.
@@ -42,7 +45,7 @@ public final class DemoDataGenerator {
 	public static final int ASSISTANCE = 200;
 	public static final int SERVICES = 40;
 
-	static final ZoneId SYDNEY = ZoneId.of("Australia/Sydney");
+	static final ZoneId SYDNEY = ClockConfig.SYDNEY;
 
 	record Suburb(String name, String postcode) {
 	}
@@ -122,7 +125,7 @@ public final class DemoDataGenerator {
 		}
 		List<AssistanceRow> assistance = assistance(households, today, random);
 		List<ServiceRow> services = services(random);
-		return new DemoData(List.copyOf(households), List.copyOf(assistance), List.copyOf(services));
+		return new DemoData(List.copyOf(households), List.copyOf(assistance), List.copyOf(services), GUIDELINES);
 	}
 
 	// ---- households ----------------------------------------------------------
@@ -265,6 +268,31 @@ public final class DemoDataGenerator {
 		}
 		return rows;
 	}
+
+	// ---- guidelines ----------------------------------------------------------
+
+	/**
+	 * The client's assistance guidelines. Fixed, not random: they are policy, not
+	 * history, and dated rather than relative. Limits sit at the top of the seeded
+	 * amounts, so the seed data is within its own guidelines; the 90-day energy
+	 * window makes HH-0001's two energy payments (21 and 75 days ago) a repeat.
+	 */
+	public static final List<GuidelineRow> GUIDELINES = List.of(
+			new GuidelineRow(NeedCategory.FOOD, "Food assistance (fictional demo guideline)",
+					"Offer supermarket vouchers or a food hamper when a household cannot cover groceries until its "
+							+ "next payment. For ongoing need, also refer the household to a local pantry. Food "
+							+ "assistance again within the repeat window needs a short note explaining why.",
+					new BigDecimal("150.00"), 14, LocalDate.of(2026, 7, 1)),
+			new GuidelineRow(NeedCategory.ENERGY_BILL, "Energy bill assistance (fictional demo guideline)",
+					"Help with gas or electricity bills, with priority for disconnection notices. Pay the retailer "
+							+ "directly, never cash. A repeat request within the repeat window needs coordinator "
+							+ "approval and a referral to the retailer's hardship program or an energy help service.",
+					new BigDecimal("400.00"), 90, LocalDate.of(2026, 7, 1)),
+			new GuidelineRow(NeedCategory.RENT, "Rent assistance (fictional demo guideline)",
+					"Help with rent arrears or bond to keep a household housed. Pay the landlord or agent directly. "
+							+ "A repeat request within the repeat window needs coordinator approval and a referral "
+							+ "to a tenancy support service.",
+					new BigDecimal("600.00"), 180, LocalDate.of(2026, 7, 1)));
 
 	// ---- helpers -------------------------------------------------------------
 

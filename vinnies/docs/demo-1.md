@@ -5,6 +5,9 @@ already find the right household from a volunteer's rough details. It handles mi
 two families with the same name, and a phone number when there is one. It never hands back
 contact details. All data is fictional.
 
+> **Since Iteration 2 the server needs a token.** Run `./get-token.sh read` and add the header
+> `Authorization: Bearer <token>` in Inspector before Connect; see [demo-2.md](demo-2.md).
+
 ## Before the demo (about 2 minutes)
 
 ```bash

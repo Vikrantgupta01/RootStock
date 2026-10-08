@@ -1,10 +1,12 @@
 package com.sinewlabs.vinnies.mcp.household;
 
 import com.sinewlabs.vinnies.mcp.household.HouseholdMatcher.HouseholdMatch;
+import com.sinewlabs.vinnies.mcp.security.Scopes;
 import java.util.List;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpTool.McpAnnotations;
 import org.springframework.ai.mcp.annotation.McpToolParam;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +37,7 @@ public class FindHouseholdTool {
 					+ "An empty list means no household is a likely match. Returns no contact details.",
 			annotations = @McpAnnotations(title = "Find household", readOnlyHint = true, destructiveHint = false,
 					idempotentHint = true, openWorldHint = false))
+	@PreAuthorize(Scopes.READ)
 	@Transactional(readOnly = true)
 	public HouseholdMatches findHousehold(
 			@McpToolParam(description = "Name of a household member or the family name, e.g. 'Linh Tran' or "

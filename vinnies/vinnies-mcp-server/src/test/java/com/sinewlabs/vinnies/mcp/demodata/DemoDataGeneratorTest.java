@@ -81,6 +81,34 @@ class DemoDataGeneratorTest {
 	}
 
 	@Test
+	void oneGuidelinePerAssistanceType() {
+		assertThat(data.guidelines()).extracting(DemoData.GuidelineRow::assistanceType)
+				.containsExactlyInAnyOrder(com.sinewlabs.vinnies.mcp.vocabulary.NeedCategory.values());
+	}
+
+	@Test
+	void seededAssistanceStaysWithinItsOwnGuidelineLimits() {
+		var limits = new java.util.EnumMap<com.sinewlabs.vinnies.mcp.vocabulary.NeedCategory, BigDecimal>(
+				com.sinewlabs.vinnies.mcp.vocabulary.NeedCategory.class);
+		data.guidelines().forEach(g -> limits.put(g.assistanceType(), g.limitPerVisitAud()));
+		assertThat(data.assistance())
+				.allSatisfy(a -> assertThat(a.amountAud()).isLessThanOrEqualTo(limits.get(a.category())));
+	}
+
+	@Test
+	void theFirstDemoHouseholdsTwoEnergyPaymentsAreARepeatUnderTheGuideline() {
+		int energyWindow = data.guidelines().stream()
+				.filter(g -> g.assistanceType() == com.sinewlabs.vinnies.mcp.vocabulary.NeedCategory.ENERGY_BILL)
+				.findFirst().orElseThrow().repeatWindowDays();
+		var tran = data.households().get(0).id();
+		assertThat(data.assistance())
+				.filteredOn(a -> a.householdId().equals(tran)
+						&& a.category() == com.sinewlabs.vinnies.mcp.vocabulary.NeedCategory.ENERGY_BILL
+						&& !a.assistedOn().isBefore(TODAY.minusDays(energyWindow)))
+				.hasSizeGreaterThanOrEqualTo(2);
+	}
+
+	@Test
 	void everyNeedCategoryHasServices() {
 		assertThat(data.services()).extracting(DemoData.ServiceRow::needCategory)
 				.containsOnly(com.sinewlabs.vinnies.mcp.vocabulary.NeedCategory.values());

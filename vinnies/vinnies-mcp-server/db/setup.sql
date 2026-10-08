@@ -8,6 +8,8 @@
 --
 -- Run connected to the rootstock_app database as the login the app uses
 -- (VINNIES_DB_USERNAME). Safe to run again: it only creates what is missing.
+-- Every object names its schema explicitly, so it works in SQL tools that run
+-- each statement in a separate session (where SET search_path would be lost).
 -- The app does not create or change tables itself; it checks on startup that
 -- these exist and match its entities (hibernate ddl-auto: validate).
 --
@@ -16,7 +18,6 @@
 -- =====================================================================
 
 CREATE SCHEMA IF NOT EXISTS vinnies_mock;
-SET search_path TO vinnies_mock;
 
 -- ---------------------------------------------------------------------
 -- Households and their members (ontology: Household extends core.Party:
@@ -28,7 +29,7 @@ SET search_path TO vinnies_mock;
 -- stable identifier tools hand out (householdRef in the tool catalogue).
 -- ---------------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS household (
+CREATE TABLE IF NOT EXISTS vinnies_mock.household (
     id             UUID         PRIMARY KEY,
     ref            VARCHAR(16)  NOT NULL UNIQUE,     -- e.g. HH-0001
     family_name    VARCHAR(100) NOT NULL,            -- how the household is usually referred to
@@ -39,11 +40,11 @@ CREATE TABLE IF NOT EXISTS household (
     created_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS ix_household_suburb ON household (lower(suburb));
+CREATE INDEX IF NOT EXISTS ix_household_suburb ON vinnies_mock.household (lower(suburb));
 
-CREATE TABLE IF NOT EXISTS person (
+CREATE TABLE IF NOT EXISTS vinnies_mock.person (
     id             UUID         PRIMARY KEY,
-    household_id   UUID         NOT NULL REFERENCES household (id) ON DELETE CASCADE,
+    household_id   UUID         NOT NULL REFERENCES vinnies_mock.household (id) ON DELETE CASCADE,
     given_name     VARCHAR(100) NOT NULL,            -- PII
     family_name    VARCHAR(100) NOT NULL,            -- PII
     relationship   VARCHAR(20)  NOT NULL
@@ -51,10 +52,10 @@ CREATE TABLE IF NOT EXISTS person (
     birth_year     SMALLINT     CHECK (birth_year BETWEEN 1900 AND 2100)
 );
 
-CREATE INDEX IF NOT EXISTS ix_person_household ON person (household_id);
+CREATE INDEX IF NOT EXISTS ix_person_household ON vinnies_mock.person (household_id);
 
 -- Exactly one primary contact per household: the person a volunteer asks for.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_person_primary_contact ON person (household_id)
+CREATE UNIQUE INDEX IF NOT EXISTS ux_person_primary_contact ON vinnies_mock.person (household_id)
     WHERE relationship = 'PRIMARY_CONTACT';
 
 -- ---------------------------------------------------------------------
@@ -63,10 +64,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_person_primary_contact ON person (household
 -- date, type, amount. category uses the ontology's NeedCategory vocabulary.
 -- ---------------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS assistance (
+CREATE TABLE IF NOT EXISTS vinnies_mock.assistance (
     id            UUID          PRIMARY KEY,
     ref           VARCHAR(16)   NOT NULL UNIQUE,      -- e.g. AS-00001
-    household_id  UUID          NOT NULL REFERENCES household (id) ON DELETE CASCADE,
+    household_id  UUID          NOT NULL REFERENCES vinnies_mock.household (id) ON DELETE CASCADE,
     assisted_on   DATE          NOT NULL,
     category      VARCHAR(32)   NOT NULL
         CHECK (category IN ('FOOD', 'ENERGY_BILL', 'RENT')),
@@ -75,7 +76,7 @@ CREATE TABLE IF NOT EXISTS assistance (
 );
 
 -- History lookups are always "this household, most recent first".
-CREATE INDEX IF NOT EXISTS ix_assistance_household_date ON assistance (household_id, assisted_on DESC);
+CREATE INDEX IF NOT EXISTS ix_assistance_household_date ON vinnies_mock.assistance (household_id, assisted_on DESC);
 
 -- ---------------------------------------------------------------------
 -- Local services volunteers refer households to (ontology: Service, the target
@@ -83,7 +84,7 @@ CREATE INDEX IF NOT EXISTS ix_assistance_household_date ON assistance (household
 -- returns address, hours and eligibility.
 -- ---------------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS local_service (
+CREATE TABLE IF NOT EXISTS vinnies_mock.local_service (
     id            UUID          PRIMARY KEY,
     ref           VARCHAR(16)   NOT NULL UNIQUE,      -- e.g. SVC-001
     name          VARCHAR(150)  NOT NULL,
@@ -97,4 +98,22 @@ CREATE TABLE IF NOT EXISTS local_service (
     eligibility   VARCHAR(500)  NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS ix_local_service_need_suburb ON local_service (need_category, lower(suburb));
+CREATE INDEX IF NOT EXISTS ix_local_service_need_suburb ON vinnies_mock.local_service (need_category, lower(suburb));
+
+-- ---------------------------------------------------------------------
+-- Assistance guidelines: the client's own rules for each kind of help. Read
+-- by get_assistance_guidelines and published as MCP resources. The limit and
+-- the repeat window are what the pack's rules use (R02 amount limit, R03
+-- frequency), so client staff can change them here without a pack release.
+-- One row per assistance type. Fictional content.
+-- ---------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS vinnies_mock.assistance_guideline (
+    assistance_type      VARCHAR(32)   PRIMARY KEY
+        CHECK (assistance_type IN ('FOOD', 'ENERGY_BILL', 'RENT')),
+    title                VARCHAR(150)  NOT NULL,
+    guideline_text       TEXT          NOT NULL,
+    limit_per_visit_aud  NUMERIC(10,2) NOT NULL CHECK (limit_per_visit_aud >= 0),
+    repeat_window_days   INTEGER       NOT NULL CHECK (repeat_window_days > 0),
+    effective_from       DATE          NOT NULL
+);

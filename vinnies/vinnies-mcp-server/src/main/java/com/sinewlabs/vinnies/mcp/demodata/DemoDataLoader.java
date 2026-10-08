@@ -1,6 +1,7 @@
 package com.sinewlabs.vinnies.mcp.demodata;
 
 import com.sinewlabs.vinnies.mcp.demodata.DemoData.AssistanceRow;
+import com.sinewlabs.vinnies.mcp.demodata.DemoData.GuidelineRow;
 import com.sinewlabs.vinnies.mcp.demodata.DemoData.HouseholdRow;
 import com.sinewlabs.vinnies.mcp.demodata.DemoData.PersonRow;
 import com.sinewlabs.vinnies.mcp.demodata.DemoData.ServiceRow;
@@ -26,14 +27,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class DemoDataLoader {
 
 	/** Child tables first, so a delete never trips a foreign key. */
-	private static final List<String> TABLES = List.of("assistance", "person", "household", "local_service");
+	private static final List<String> TABLES = List.of("assistance", "person", "household", "local_service",
+			"assistance_guideline");
 
 	public enum Outcome {
 		SEEDED, ALREADY_SEEDED, RESET
 	}
 
 	public record Summary(Outcome outcome, long households, long people, long assistance, long services,
-			String fingerprint) {
+			long guidelines, String fingerprint) {
 	}
 
 	private final JdbcTemplate jdbc;
@@ -62,7 +64,7 @@ public class DemoDataLoader {
 				+ "Run 'reset' to replace it with the demo data.");
 	}
 
-	/** Wipes the app's four tables and loads the demo data again: back to a clean demo. */
+	/** Wipes the app's tables and loads the demo data again: back to a clean demo. */
 	@Transactional
 	public Summary reset() {
 		jdbc.execute("TRUNCATE " + String.join(", ", TABLES));
@@ -71,7 +73,7 @@ public class DemoDataLoader {
 	}
 
 	DemoData generate() {
-		return DemoDataGenerator.generate(LocalDate.now(clock.withZone(DemoDataGenerator.SYDNEY)));
+		return DemoDataGenerator.generate(LocalDate.now(clock));
 	}
 
 	private boolean isEmpty() {
@@ -83,6 +85,7 @@ public class DemoDataLoader {
 		return count("household") == DemoDataGenerator.HOUSEHOLDS
 				&& count("assistance") == DemoDataGenerator.ASSISTANCE
 				&& count("local_service") == DemoDataGenerator.SERVICES
+				&& count("assistance_guideline") == DemoDataGenerator.GUIDELINES.size()
 				&& jdbc.queryForObject("SELECT count(*) FROM household WHERE ref = 'HH-0001' AND family_name = 'Tran'",
 						Long.class) == 1;
 	}
@@ -118,11 +121,19 @@ public class DemoDataLoader {
 		}
 		jdbc.batchUpdate("INSERT INTO local_service (id, ref, name, need_category, suburb, postcode, address, phone, "
 				+ "hours, eligibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", services);
+
+		List<Object[]> guidelines = new ArrayList<>();
+		for (GuidelineRow g : data.guidelines()) {
+			guidelines.add(new Object[] { g.assistanceType().name(), g.title(), g.guidelineText(),
+					g.limitPerVisitAud(), g.repeatWindowDays(), Date.valueOf(g.effectiveFrom()) });
+		}
+		jdbc.batchUpdate("INSERT INTO assistance_guideline (assistance_type, title, guideline_text, "
+				+ "limit_per_visit_aud, repeat_window_days, effective_from) VALUES (?, ?, ?, ?, ?, ?)", guidelines);
 	}
 
 	private Summary summary(Outcome outcome) {
 		return new Summary(outcome, count("household"), count("person"), count("assistance"), count("local_service"),
-				fingerprint());
+				count("assistance_guideline"), fingerprint());
 	}
 
 	/**

@@ -44,6 +44,13 @@ spring:
         streamable-http:
           mcp-endpoint: /mcp
 
+vinnies:
+  auth:
+    # The Cognito user pool that issues access tokens for this server
+    # (https://cognito-idp.<region>.amazonaws.com/<pool-id>). No default: without
+    # it the server refuses to start rather than run unprotected.
+    issuer-uri: ${VINNIES_AUTH_ISSUER_URI}
+
 server:
   # 8080 is Rootstock's; this server sits beside it.
   port: ${VINNIES_MCP_PORT:8081}

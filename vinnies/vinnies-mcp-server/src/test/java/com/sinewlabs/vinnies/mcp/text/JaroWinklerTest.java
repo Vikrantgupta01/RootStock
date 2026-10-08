@@ -1,4 +1,4 @@
-package com.sinewlabs.vinnies.mcp.household;
+package com.sinewlabs.vinnies.mcp.text;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;

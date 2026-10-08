@@ -13,7 +13,8 @@ import java.util.UUID;
  * entities so two generations can be compared with {@code equals}: that is how
  * the tests prove the seed is repeatable.
  */
-public record DemoData(List<HouseholdRow> households, List<AssistanceRow> assistance, List<ServiceRow> services) {
+public record DemoData(List<HouseholdRow> households, List<AssistanceRow> assistance, List<ServiceRow> services,
+		List<GuidelineRow> guidelines) {
 
 	public record HouseholdRow(UUID id, String ref, String familyName, String suburb, String postcode, String phone,
 			boolean consentGiven, Instant createdAt, List<PersonRow> members) {
@@ -29,6 +30,10 @@ public record DemoData(List<HouseholdRow> households, List<AssistanceRow> assist
 
 	public record ServiceRow(UUID id, String ref, String name, NeedCategory needCategory, String suburb,
 			String postcode, String address, String phone, String hours, String eligibility) {
+	}
+
+	public record GuidelineRow(NeedCategory assistanceType, String title, String guidelineText,
+			BigDecimal limitPerVisitAud, int repeatWindowDays, LocalDate effectiveFrom) {
 	}
 
 	public int personCount() {

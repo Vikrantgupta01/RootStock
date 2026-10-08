@@ -28,9 +28,9 @@ public enum DataCommand {
 	public DemoDataLoader.Summary run(ConfigurableApplicationContext context) {
 		DemoDataLoader loader = context.getBean(DemoDataLoader.class);
 		DemoDataLoader.Summary summary = this == SEED ? loader.seed() : loader.reset();
-		log.info("{}: {} -- households={} people={} assistance={} services={} fingerprint={}",
+		log.info("{}: {} -- households={} people={} assistance={} services={} guidelines={} fingerprint={}",
 				name().toLowerCase(), summary.outcome(), summary.households(), summary.people(),
-				summary.assistance(), summary.services(), summary.fingerprint());
+				summary.assistance(), summary.services(), summary.guidelines(), summary.fingerprint());
 		return summary;
 	}
 }

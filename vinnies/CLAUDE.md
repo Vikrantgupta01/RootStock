@@ -21,6 +21,11 @@ Checked against these versions, not guessed:
   at `/mcp`. The annotation scanner is on by default: any Spring bean with `@McpTool`
   methods is a tool.
 - MCP SDK 2.0: `Tool.inputSchema()` is a plain `Map` (the raw JSON Schema).
+- An exception thrown from a tool becomes `isError: true`. Spring AI writes the text as the
+  exception's message, a line break, then its cause's message, so a simple message appears
+  twice. That's expected; the error flag is what callers act on.
+- Tools that look something up by ref throw on an unknown ref (an error), rather than
+  returning an empty result: "no such household" must not read as "no history".
 
 ## Data
 
@@ -52,17 +57,39 @@ Follow the design's tool rules:
   is contact details.
 - (From Iteration 10) every write is idempotent and needs an approval id.
 
+## Security (Iteration 2)
+
+- **Every request to `/mcp` needs a Cognito access token** (client credentials, user pool
+  `rootstock-users`, resource server `vinnies`). `SecurityConfig` checks the signature
+  (pool JWKS), issuer (`VINNIES_AUTH_ISSUER_URI`), expiry and **`token_use = access`**:
+  the pool's user-login ID tokens use the same keys and must never get in. Anything else
+  gets HTTP 401 with `WWW-Authenticate: Bearer`.
+- **Every tool and resource declares its scope** with `@PreAuthorize(Scopes.READ)` or
+  `@PreAuthorize(Scopes.WRITE)`. A new tool without one is reachable with any valid
+  token: don't add one. Only `ping` is deliberately scope-free. A missing scope comes back
+  as an MCP error ("Access Denied"), and the tool body never runs.
+- Write tools (Iteration 10) need `vinnies/write`. Rootstock asks for that scope only in
+  commit, after an approval.
+- The server never holds the client secret. `VINNIES_MCP_CLIENT_*` in `.env` are only for
+  `get-token.sh` and the integration tests.
+- `/.well-known/oauth-protected-resource` (RFC 9728 metadata) is public on purpose: MCP
+  clients read it before they have a token.
+- Observed, not assumed: Cognito answers `400 invalid_scope` for a scope the client
+  wasn't granted.
+
 ## Tests
 
 - **Unit tests** (`*Test`): `mvn test`. Seconds, no database, no AWS.
-  `McpEndpointTest` leaves out the database and mocks the beans that need it; add a
-  `@MockitoBean` there when a new tool needs a repository.
+  `McpEndpointTest` and `McpSecurityTest` leave out the database and mock the beans that
+  need it; add a `@MockitoBean` to both when a new tool needs a repository. They sign
+  tokens with a local key (`TestJwt`), checked by the production validators.
 - **Integration tests** (`*IT`): `mvn verify` with `.env` loaded. They run against RDS
   in a throwaway schema per run (`@Import(ThrowawaySchemaConfig.class)`): created from
   `db/setup.sql`, seeded through `DemoDataLoader.reset()`, dropped at the end. Never point
   a test at `vinnies_mock`.
 - Tool tests go through a real MCP client (`McpTestClient`), the way Inspector and
-  Rootstock connect.
+  Rootstock connect. Integration tests use real Cognito tokens (`CognitoTokens`, cached per
+  scope for the run, since each token request is billed).
 - A killed test run can leave a `vinnies_test_<timestamp>_<id>` schema behind. Drop it by
   hand (`DROP SCHEMA <name> CASCADE`).
 - Tests that call Bedrock are tagged `live` (none yet).
@@ -74,6 +101,7 @@ cd vinnies/vinnies-mcp-server
 set -a && source .env && set +a        # settings; names in .env.example
 mvn spring-boot:run                    # MCP server on http://localhost:8081/mcp
 ./demo-data.sh seed|reset              # load the fictional data
+./get-token.sh read|write              # a 60-minute access token, for Inspector
 mvn test                               # unit tests
 mvn verify                             # + integration tests on RDS
 npx @modelcontextprotocol/inspector    # Streamable HTTP, http://localhost:8081/mcp

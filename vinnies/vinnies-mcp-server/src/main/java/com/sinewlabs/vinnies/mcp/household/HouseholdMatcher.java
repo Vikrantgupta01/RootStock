@@ -1,11 +1,10 @@
 package com.sinewlabs.vinnies.mcp.household;
 
-import java.text.Normalizer;
+import com.sinewlabs.vinnies.mcp.text.JaroWinkler;
+import com.sinewlabs.vinnies.mcp.text.Text;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Ranks households against a name, a suburb and optionally a phone number.
@@ -34,7 +33,6 @@ public final class HouseholdMatcher {
 	static final int MAX_RESULTS = 5;
 	private static final double NAME_WEIGHT = 0.75;
 	private static final double SUBURB_BOOST = 0.2;
-	private static final double SUBURB_SIMILARITY = 0.9;
 
 	public enum MatchedOn {
 		PHONE, NAME, SUBURB
@@ -82,8 +80,7 @@ public final class HouseholdMatcher {
 		if (!nameMatches && !phoneMatches) {
 			return null;
 		}
-		boolean suburbMatches = JaroWinkler.similarity(suburbQuery, normalise(household.getSuburb()))
-				>= SUBURB_SIMILARITY;
+		boolean suburbMatches = Text.sameSuburb(suburbQuery, household.getSuburb());
 
 		List<MatchedOn> matchedOn = new ArrayList<>();
 		if (phoneMatches) {
@@ -132,18 +129,12 @@ public final class HouseholdMatcher {
 				.orElse(household.getFamilyName() + " household");
 	}
 
-	/** Lower case, accents and punctuation removed: "O'Brien" and "obrien" compare equal. */
 	static String normalise(String text) {
-		if (text == null) {
-			return "";
-		}
-		String plain = Normalizer.normalize(text, Normalizer.Form.NFD).replaceAll("\\p{M}", "");
-		return plain.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9 ]", "").replaceAll("\\s+", " ").strip();
+		return Text.normalise(text);
 	}
 
 	static List<String> words(String text) {
-		String normalised = normalise(text);
-		return normalised.isEmpty() ? List.of() : Arrays.asList(normalised.split(" "));
+		return Text.words(text);
 	}
 
 	/** Digits only, with an Australian +61 prefix turned back into a leading 0. */

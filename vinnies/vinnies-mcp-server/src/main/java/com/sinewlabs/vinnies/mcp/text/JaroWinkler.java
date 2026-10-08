@@ -1,11 +1,11 @@
-package com.sinewlabs.vinnies.mcp.household;
+package com.sinewlabs.vinnies.mcp.text;
 
 /**
  * Jaro-Winkler string similarity, 0 (nothing in common) to 1 (identical). Suited
  * to short names: it tolerates transposed and substituted letters (Smith/Smyth,
  * Catherine/Katherine) and rewards a shared beginning.
  */
-final class JaroWinkler {
+public final class JaroWinkler {
 
 	private static final double PREFIX_SCALE = 0.1;
 	private static final int MAX_PREFIX = 4;
@@ -13,7 +13,7 @@ final class JaroWinkler {
 	private JaroWinkler() {
 	}
 
-	static double similarity(String a, String b) {
+	public static double similarity(String a, String b) {
 		if (a.equals(b)) {
 			return 1.0;
 		}

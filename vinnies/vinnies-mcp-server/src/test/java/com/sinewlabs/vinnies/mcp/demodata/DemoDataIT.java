@@ -42,11 +42,12 @@ class DemoDataIT {
 		assertThat(first.households()).isEqualTo(50);
 		assertThat(first.assistance()).isEqualTo(200);
 		assertThat(first.services()).isEqualTo(40);
+		assertThat(first.guidelines()).isEqualTo(3);
 	}
 
 	@Test
 	void seedIntoEmptyTablesLoadsTheDemoDataAndSeedingAgainChangesNothing() {
-		jdbc.execute("TRUNCATE assistance, person, household, local_service");
+		jdbc.execute("TRUNCATE assistance, person, household, local_service, assistance_guideline");
 
 		Summary seeded = demoData.seed();
 		Summary again = demoData.seed();

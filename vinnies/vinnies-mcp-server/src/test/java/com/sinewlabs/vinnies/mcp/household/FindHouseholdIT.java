@@ -3,6 +3,7 @@ package com.sinewlabs.vinnies.mcp.household;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sinewlabs.vinnies.mcp.demodata.DemoDataLoader;
+import com.sinewlabs.vinnies.mcp.support.CognitoTokens;
 import com.sinewlabs.vinnies.mcp.support.McpTestClient;
 import com.sinewlabs.vinnies.mcp.support.ThrowawaySchemaConfig;
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -46,7 +47,7 @@ class FindHouseholdIT {
 	@BeforeEach
 	void seedAndConnect() {
 		demoData.reset();
-		client = McpTestClient.connect(port);
+		client = McpTestClient.connect(port, CognitoTokens.read());
 	}
 
 	@AfterEach

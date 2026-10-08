@@ -1,16 +1,24 @@
 package com.sinewlabs.vinnies.mcp;
 
+import com.sinewlabs.vinnies.mcp.assistance.AssistanceRepository;
 import com.sinewlabs.vinnies.mcp.demodata.DemoDataLoader;
+import com.sinewlabs.vinnies.mcp.guideline.AssistanceGuideline;
+import com.sinewlabs.vinnies.mcp.guideline.AssistanceGuidelineRepository;
+import com.sinewlabs.vinnies.mcp.vocabulary.NeedCategory;
 import com.sinewlabs.vinnies.mcp.household.Household;
 import com.sinewlabs.vinnies.mcp.household.HouseholdRepository;
 import com.sinewlabs.vinnies.mcp.household.Relationship;
+import com.sinewlabs.vinnies.mcp.localservice.LocalServiceRepository;
+import com.sinewlabs.vinnies.mcp.support.McpTestClient;
+import com.sinewlabs.vinnies.mcp.support.TestJwt;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
-import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Optional;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.BDDMockito;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
@@ -36,7 +45,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 		org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,\
 		org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,\
 		org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration
+		vinnies.auth.issuer-uri=https://cognito-idp.test.example/us-east-1_TEST
 		""")
+@Import(TestJwt.Config.class)
 class McpEndpointTest {
 
 	@LocalServerPort
@@ -48,15 +59,20 @@ class McpEndpointTest {
 	@MockitoBean
 	HouseholdRepository households;
 
+	@MockitoBean
+	AssistanceRepository assistance;
+
+	@MockitoBean
+	AssistanceGuidelineRepository guidelines;
+
+	@MockitoBean
+	LocalServiceRepository localServices;
+
 	McpSyncClient client;
 
 	@BeforeEach
 	void connect() {
-		var transport = HttpClientStreamableHttpTransport.builder("http://localhost:" + port)
-				.endpoint("/mcp")
-				.build();
-		client = McpClient.sync(transport).build();
-		client.initialize();
+		client = McpTestClient.connect(port, TestJwt.access("vinnies/read"));
 	}
 
 	@AfterEach
@@ -124,5 +140,73 @@ class McpEndpointTest {
 						.contains("\"householdRef\":\"HH-0001\"")
 						.contains("\"matchScore\":0.95")
 						.doesNotContain("5550"));
+	}
+
+	@Test
+	void getAssistanceHistoryTakesAHouseholdRefAndAWholeNumberOfDays() {
+		McpSchema.Tool tool = client.listTools().tools().stream()
+				.filter(t -> t.name().equals("get_assistance_history"))
+				.findFirst()
+				.orElseThrow();
+
+		Map<String, Object> schema = tool.inputSchema();
+		Map<?, ?> properties = (Map<?, ?>) schema.get("properties");
+		List<String> required = ((List<?>) schema.get("required")).stream().map(String::valueOf).toList();
+		assertThat(required).containsExactlyInAnyOrder("householdRef", "sinceDays");
+		assertThat(((Map<?, ?>) properties.get("sinceDays")).get("type")).isEqualTo("integer");
+		assertThat(tool.annotations().readOnlyHint()).isTrue();
+	}
+
+	@Test
+	void getAssistanceGuidelinesOffersOnlyTheKnownTypes() {
+		McpSchema.Tool tool = client.listTools().tools().stream()
+				.filter(t -> t.name().equals("get_assistance_guidelines"))
+				.findFirst()
+				.orElseThrow();
+
+		Map<?, ?> type = (Map<?, ?>) ((Map<?, ?>) tool.inputSchema().get("properties")).get("assistanceType");
+		List<String> allowed = ((List<?>) type.get("enum")).stream().map(String::valueOf).toList();
+		assertThat(allowed).containsExactlyInAnyOrder("FOOD", "ENERGY_BILL", "RENT");
+	}
+
+	@Test
+	void publishesTheGuidelinesAsResources() {
+		assertThat(client.listResources().resources()).extracting(McpSchema.Resource::uri)
+				.contains("vinnies://guidelines");
+		assertThat(client.listResourceTemplates().resourceTemplates())
+				.extracting(McpSchema.ResourceTemplate::uriTemplate)
+				.contains("vinnies://guidelines/{assistanceType}");
+	}
+
+	@Test
+	void readsOneGuidelineResourceAsMarkdown() {
+		BDDMockito.given(guidelines.findById(NeedCategory.RENT)).willReturn(Optional.of(new AssistanceGuideline(
+				NeedCategory.RENT, "Rent assistance", "Pay the agent directly.", new BigDecimal("600.00"), 180,
+				LocalDate.of(2026, 7, 1))));
+
+		McpSchema.ReadResourceResult result = client.readResource(
+				new McpSchema.ReadResourceRequest("vinnies://guidelines/RENT"));
+
+		assertThat(result.contents()).singleElement()
+				.isInstanceOfSatisfying(McpSchema.TextResourceContents.class, text -> {
+					assertThat(text.mimeType()).isEqualTo("text/markdown");
+					assertThat(text.text()).contains("# Rent assistance", "Limit per visit: $600.00");
+				});
+	}
+
+	@Test
+	void searchLocalServicesTakesAKnownNeedAndASuburb() {
+		McpSchema.Tool tool = client.listTools().tools().stream()
+				.filter(t -> t.name().equals("search_local_services"))
+				.findFirst()
+				.orElseThrow();
+
+		Map<?, ?> properties = (Map<?, ?>) tool.inputSchema().get("properties");
+		List<String> required = ((List<?>) tool.inputSchema().get("required")).stream().map(String::valueOf).toList();
+		List<String> needs = ((List<?>) ((Map<?, ?>) properties.get("needType")).get("enum")).stream()
+				.map(String::valueOf).toList();
+		assertThat(required).containsExactlyInAnyOrder("needType", "suburb");
+		assertThat(needs).containsExactlyInAnyOrder("FOOD", "ENERGY_BILL", "RENT");
+		assertThat(tool.annotations().readOnlyHint()).isTrue();
 	}
 }

@@ -63,7 +63,6 @@ fix them when the related area is touched.
 - `RequestTrace` reads the active Spring profile to name the Langfuse environment
   (`development` when there is none). Nothing sets a profile any more, so this is
   always `development`.
-- There is no `.env.example` for `rootstock-core`; only `frontend/.env.example` exists.
 - **There are no integration tests.** The Testcontainers-based suite was removed
   along with Docker (2026-10-06). New ones should use the throwaway RDS schema rule
   above. There are no `live`-tagged tests yet either: every test mocks Bedrock.
