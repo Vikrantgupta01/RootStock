@@ -4,6 +4,7 @@ import { useCurrentUser, useHasSession } from './hooks/useSession'
 import { AgentPage } from './pages/AgentPage'
 import { ChatPage } from './pages/ChatPage'
 import { KnowledgePage } from './pages/KnowledgePage'
+import { ToolsPage } from './pages/ToolsPage'
 
 export default function App() {
   const hasSession = useHasSession()
@@ -26,6 +27,7 @@ export default function App() {
       <Route path="/" element={<ChatPage />} />
       <Route path="/agent" element={<AgentPage />} />
       <Route path="/knowledge" element={<KnowledgePage />} />
+      <Route path="/tools" element={<ToolsPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

@@ -1,0 +1,41 @@
+# Vinnies tools for Rootstock: the client system Rootstock connects to, and how.
+#
+# Rootstock reads this file through ROOTSTOCK_TOOLS_FILE in rootstock-core/.env
+# (Iteration 3). It is plain Spring configuration for now; the pack's own
+# tools.yaml format (ontology mappings, commit actions) replaces it from
+# Iteration 5. Secrets are never written here: ${...} values come from .env.
+
+rootstock:
+  tools:
+    connections:
+      vinnies:
+        url: ${VINNIES_MCP_URL:http://localhost:8081}
+        endpoint: /mcp
+        token-url: ${VINNIES_MCP_TOKEN_URL}
+        client-id: ${VINNIES_MCP_CLIENT_ID}
+        client-secret: ${VINNIES_MCP_CLIENT_SECRET}
+        read-scope: vinnies/read
+        write-scope: vinnies/write
+
+    # Every tool Rootstock may call. A list (not a map) so names keep their "_".
+    # remote-name defaults to name; set it when Rootstock's name and the
+    # client system's differ.
+    tools:
+      - { name: ping,                      connection: vinnies, access: READ }
+      - { name: find_household,            connection: vinnies, access: READ }
+      - { name: get_assistance_history,    connection: vinnies, access: READ }
+      - { name: get_assistance_guidelines, connection: vinnies, access: READ }
+      - { name: search_local_services,     connection: vinnies, access: READ }
+
+    # Which tools each graph node may call. Anything else is refused by the
+    # ToolGateway before it reaches Vinnies.
+    allowlists:
+      # Enrich gathers context: read tools only.
+      enrich: [find_household, get_assistance_history, get_assistance_guidelines, search_local_services]
+      # The Tool explorer screen (Iteration 3.4): every read tool except ping.
+      explorer: [find_household, get_assistance_history, get_assistance_guidelines, search_local_services]
+      # Commit writes approved actions. Empty until the write tools (Iteration 10).
+      commit: []
+
+    # The only nodes where WRITE tools may ever be allowed (checked at startup).
+    write-nodes: [commit]

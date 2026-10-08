@@ -35,6 +35,7 @@ public class RequestTrace {
 	public static final String SURFACE_CHAT = "chat";
 	public static final String SURFACE_RAG = "rag";
 	public static final String SURFACE_AGENT = "agent";
+	public static final String SURFACE_TOOLS = "tools";
 
 	private final ObservationRegistry registry;
 	private final String environment;
@@ -59,7 +60,7 @@ public class RequestTrace {
 	 * @param name    verb-first and free of ids, e.g. {@code answer-question} --
 	 *                names are referenced by Langfuse filters and dashboards, so a
 	 *                name containing a UUID makes every trace its own category
-	 * @param surface {@link #SURFACE_CHAT}, {@link #SURFACE_RAG} or {@link #SURFACE_AGENT}
+	 * @param surface {@link #SURFACE_CHAT}, {@link #SURFACE_RAG}, {@link #SURFACE_AGENT} or {@link #SURFACE_TOOLS}
 	 */
 	public Observation start(String name, String surface, UUID conversationId) {
 		Observation observation = Observation.createNotStarted(name, registry);
@@ -93,6 +94,22 @@ public class RequestTrace {
 		if (conversationId != null) {
 			tag(observation, LangfuseAttributes.SESSION_ID, conversationId.toString());
 		}
+	}
+
+	/** Binds this trace to a Langfuse session by any id, e.g. a case id. */
+	public static void session(Observation observation, String sessionId) {
+		tag(observation, LangfuseAttributes.SESSION_ID, sessionId);
+	}
+
+	/** Adds a filterable metadata field to this observation alone, not the trace. */
+	public static void spanMetadata(Observation observation, String key, String value) {
+		tag(observation, LangfuseAttributes.OBSERVATION_METADATA_PREFIX + key, value);
+	}
+
+	/** Marks the observation WARNING or ERROR, with the reason as its status message. */
+	public static void level(Observation observation, String level, String statusMessage) {
+		tag(observation, LangfuseAttributes.OBSERVATION_LEVEL, level);
+		tag(observation, LangfuseAttributes.OBSERVATION_STATUS_MESSAGE, statusMessage);
 	}
 
 	/** Adds a filterable trace-level metadata field. */

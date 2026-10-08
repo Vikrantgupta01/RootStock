@@ -37,6 +37,11 @@ Do not change these without explicit approval.
 - **`rootstock-core` contains no Vinnies code and never references `vinnies/`.** All Vinnies
   code lives under `vinnies/`, which may depend on Rootstock but never the reverse.
 - **`core` never depends on `autoconfig` or `runtime`** (see the package plan below).
+- **Every call into a client system goes through `ToolGateway`** (`com.rootstock.core.tools`).
+  No code calls an MCP client directly, and the Spring AI MCP client starter is not used: it
+  would hand remote tools straight to the chat model. Connections, tools and per-node
+  allowlists come from a domain pack's `tools.yaml` via `ROOTSTOCK_TOOLS_FILE`, never from
+  `rootstock-core`. WRITE tools may only be allowed in write nodes (checked at startup).
 - **No writes without approval.** Ask before committing, pushing, or changing anything
   outside the working tree. That includes AWS resources (RDS data or schema, Cognito users
   and groups, S3 objects, Knowledge Base syncs) and Langfuse data.
@@ -52,8 +57,9 @@ Target layout under `com.rootstock`. Dependencies point inwards only:
 | `autoconfig` | Spring wiring: `@Configuration`, `@ConfigurationProperties`, bean definitions that assemble `core`. |
 | `runtime` | The running application: `main`, controllers, security filters, tracing aspects. |
 
-The current code is organised by feature (`agent`, `auth`, `chat`, `rag`, …), not yet
-by this plan.
+The older code is organised by feature (`agent`, `auth`, `chat`, `rag`, …), not yet by this
+plan. **New code goes into the plan's packages:** since Iteration 3, `core.tools` (gateway,
+catalog), `autoconfig.mcp` (MCP connections, tokens) and `runtime.tools` (Tool explorer).
 
 ## Not yet compliant
 

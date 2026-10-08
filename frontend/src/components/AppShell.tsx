@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { HealthBadge } from './HealthBadge'
-import { useCurrentUser, useSignOut } from '../hooks/useSession'
+import { hasRole, useCurrentUser, useSignOut } from '../hooks/useSession'
 
 /**
  * The frame every signed-in page sits in: brand, primary navigation, backend
@@ -31,6 +31,11 @@ export function AppShell({ children, wide = false }: { children: ReactNode; wide
             <NavLink to="/knowledge" className={({ isActive }) => (isActive ? 'is-active' : '')}>
               Knowledge base
             </NavLink>
+            {hasRole(user.data, 'ADMIN') && (
+              <NavLink to="/tools" className={({ isActive }) => (isActive ? 'is-active' : '')}>
+                Tools
+              </NavLink>
+            )}
           </nav>
           <div className="appbar__side">
             <HealthBadge />

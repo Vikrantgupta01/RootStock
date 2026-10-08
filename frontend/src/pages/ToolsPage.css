@@ -1,0 +1,52 @@
+/* Tool explorer ----------------------------------------------------------- */
+
+.explorer__controls,
+.explorer__form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.explorer__controls label,
+.explorer__form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.explorer__tool {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.explorer__tool p {
+  margin: 0.5rem 0 0;
+}
+
+.explorer__required {
+  color: var(--down);
+}
+
+.explorer__result {
+  margin-top: 1rem;
+}
+
+.explorer__message {
+  margin: 0.5rem 0;
+}
+
+.explorer__output {
+  margin: 0.5rem 0 0;
+  padding: 0.75rem 1rem;
+  max-height: 28rem;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: var(--bg-tint);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}

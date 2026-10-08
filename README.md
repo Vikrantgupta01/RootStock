@@ -86,7 +86,8 @@ npm run dev        # http://localhost:5173
 The Vite dev server proxies `/api/*` to `http://localhost:8080`, so no CORS setup
 is needed locally. For non-dev builds set `VITE_API_BASE_URL` (see `.env.example`).
 
-Pages: **Chat** (`/`), **Agent** (`/agent`) and **Knowledge base** (`/knowledge`).
+Pages: **Chat** (`/`), **Agent** (`/agent`), **Knowledge base** (`/knowledge`) and, for
+admins, **Tools** (`/tools`, the Tool explorer; see [Client systems](#client-systems-mcp-and-the-toolgateway)).
 
 ## Configuration
 
@@ -108,6 +109,7 @@ Backend config lives in `rootstock-core/src/main/resources/application.yml`. Key
 | `rootstock.observability.langfuse.host` | `LANGFUSE_HOST` / `LANGFUSE_BASE_URL` | `https://us.cloud.langfuse.com` |
 | `rootstock.observability.langfuse.public-key` / `.secret-key` | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | _(blank — keep in `.env`)_ |
 | `management.tracing.sampling.probability` | `LANGFUSE_SAMPLE_RATE` | `1.0` |
+| `spring.config.import` (`rootstock.tools.*`) | `ROOTSTOCK_TOOLS_FILE` | _(unset: no client systems)_ path to a domain pack's `tools.yaml` |
 | `rootstock.cors.allowed-origins` | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` |
 
 > Set `BEDROCK_MODEL` to a model or inference-profile id your AWS account has
@@ -363,6 +365,50 @@ sign-out button. The tenant is no longer typed in — it comes from the token.
 Viewers don't see the upload dropzone or the version actions; only admins see
 the **Tuning** and **Access** tabs.
 
+## Client systems (MCP) and the ToolGateway
+
+Rootstock reaches a client's own system only through **MCP tools**, and only
+through one class: **`ToolGateway`** (`com.rootstock.core.tools`). Rootstock ships
+no client: which systems to connect to, their tools and who may call what come
+from a domain pack's `tools.yaml`, named by `ROOTSTOCK_TOOLS_FILE` in `.env`. The
+Vinnies one is `vinnies/vinnies-pack/packs/vinnies/tools.yaml`.
+
+```yaml
+rootstock:
+  tools:
+    connections:            # one MCP server per client system
+      vinnies: { url: ..., token-url: ..., client-id: ${...}, client-secret: ${...},
+                 read-scope: vinnies/read, write-scope: vinnies/write }
+    tools:                  # logical name -> connection, READ or WRITE
+      - { name: find_household, connection: vinnies, access: READ }
+    allowlists:             # graph node -> the tools it may call
+      enrich: [find_household, get_assistance_history, ...]
+      commit: []
+    write-nodes: [commit]   # the only nodes where WRITE tools may ever be allowed
+```
+
+- **Connections:** the MCP SDK over Streamable HTTP, with OAuth2 client-credentials
+  tokens (Spring Security's OAuth2 client), cached until a minute before expiry.
+  Read and write tokens are separate, so a write token is requested only when a
+  write tool runs. At startup Rootstock lists each server's tools. A server that is
+  down is logged, not fatal: its session opens on first use.
+- **The gateway** checks that the tool exists and the calling node may use it, and
+  only then calls it. Each call returns a typed result (`OK`, `BLOCKED`,
+  `UNKNOWN_TOOL`, `TOOL_ERROR`, `UNAVAILABLE`), never an exception. A blocked call
+  never reaches the client system.
+- **Checked at startup:** unknown tools in an allowlist, unknown connections, and
+  **any WRITE tool allowed outside a write node** stop the app; a configured tool
+  the server doesn't offer is logged as a warning.
+- **Not the Spring AI MCP client starter:** it would hand every remote tool to the
+  chat model directly, bypassing the gateway.
+
+**Tool explorer** (`/tools`, admins only): pick a node and a tool, fill in the
+tool's own input form, run it through the gateway. A tool outside the node's
+allowlist is refused, exactly as in a run. `GET /api/tools` lists nodes, allowlists
+and each tool as the client system describes it; `POST /api/tools/call` takes
+`{node, tool, arguments, caseId?}` and returns the result with a Langfuse trace
+link. The acting user is always the signed-in user.
+
 ## Observability (Langfuse)
 
 LLM work is traced to [Langfuse](https://langfuse.com) over OpenTelemetry (OTLP
@@ -378,6 +424,15 @@ the traced code doesn't know it's traced. One trace per request:
 | `chat-response` | the Bedrock generation (model, tokens, cost) |
 | `answer-question` (RAG) | the condense generation (follow-ups only), `retrieve-context` (query, hits, scores), the answer generation |
 | `agent-run` | per Reason step a generation, per Act step a `tool-<name>` span (and `retrieve-context` under knowledge-base searches) |
+| `explore-tool` | the Tool explorer request, with its gateway call as a `tool-<name>` span |
+
+**Client-system tool calls** (every `ToolGateway.call`) are `tool-<name>` spans of
+type `tool`, with the arguments as input, the result or refusal reason as output,
+and span metadata `node`, `status`, `connection`, `durationMs`, `caseId` and
+`actingUser`. `BLOCKED` and `UNKNOWN_TOOL` are level **WARNING**; `TOOL_ERROR` and
+`UNAVAILABLE` are **ERROR**, with the reason as the status message. A call made
+outside any request starts its own `call-tool` trace with the case id as its
+session; a Tool explorer call with a case id uses it as the session too.
 
 Each trace carries the conversation as its Langfuse **session**, the Cognito
 `sub` as its **user** (not the email), and tenant/role/model as metadata.

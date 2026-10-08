@@ -137,6 +137,19 @@
 		</dependency>
 
 		<dependency>
+			<!-- MCP client (MCP SDK) for calling client systems' tools, wired by Rootstock
+			     itself rather than Spring AI's client starter: the starter would hand every
+			     remote tool to the chat model, bypassing the ToolGateway. -->
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-mcp</artifactId>
+		</dependency>
+		<dependency>
+			<!-- client_credentials tokens for MCP connections, cached until near expiry. -->
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-oauth2-client</artifactId>
+		</dependency>
+
+		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>

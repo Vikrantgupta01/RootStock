@@ -5,11 +5,16 @@ import com.rootstock.agent.dto.AgentResponse;
 import com.rootstock.chat.dto.ChatRequest;
 import com.rootstock.chat.dto.ChatResponse;
 import com.rootstock.conversation.Conversation;
+import com.rootstock.core.tools.ToolCallContext;
+import com.rootstock.core.tools.ToolCallResult;
 import com.rootstock.rag.query.dto.RagQueryRequest;
 import com.rootstock.rag.query.dto.RagQueryResponse;
+import com.rootstock.runtime.tools.ToolExplorerController.CallRequest;
+import com.rootstock.runtime.tools.ToolExplorerController.CallResponse;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import java.util.List;
+import java.util.Map;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.AfterReturning;
 import org.aspectj.lang.annotation.Around;
@@ -18,6 +23,7 @@ import org.aspectj.lang.annotation.Pointcut;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import software.amazon.awssdk.services.bedrockagentruntime.model.KnowledgeBaseRetrievalResult;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * All of this application's tracing, in one place and outside the code it
@@ -77,6 +83,14 @@ public class TracingAspect {
 
 	@Pointcut("execution(* com.rootstock.agent.AgentToolbox.execute(..))")
 	void agentToolCall() {
+	}
+
+	@Pointcut("execution(* com.rootstock.core.tools.ToolGateway.call(..))")
+	void gatewayToolCall() {
+	}
+
+	@Pointcut("execution(* com.rootstock.runtime.tools.ToolExplorerController.call(..))")
+	void toolExplorerCall() {
 	}
 
 	@Pointcut("execution(* com.rootstock.conversation.ConversationService.resolve(..))")
@@ -294,6 +308,120 @@ public class TracingAspect {
 		}
 		finally {
 			observation.stop();
+		}
+	}
+
+	// ---- client-system tool calls (ToolGateway) -------------------------------
+
+	private static final JsonMapper JSON = JsonMapper.builder().build();
+
+	/**
+	 * Every call through the gateway, allowed or not: a refused call is exactly
+	 * what an audit needs to see. Inside a request or graph run it is a child
+	 * span; called on its own it starts its own trace, with the case as the
+	 * Langfuse session, so a case's tool calls group together.
+	 *
+	 * <p>BLOCKED and UNKNOWN_TOOL are WARNING (nothing was sent); TOOL_ERROR and
+	 * UNAVAILABLE are ERROR. Either way the reason is the status message, so
+	 * problems show in a list of spans without opening each one.
+	 */
+	@Around("gatewayToolCall()")
+	public Object traceGatewayToolCall(ProceedingJoinPoint joinPoint) throws Throwable {
+		// call(node, tool, arguments, context)
+		Object[] args = joinPoint.getArgs();
+		String node = (String) args[0];
+		String tool = (String) args[1];
+		ToolCallContext context = args[3] instanceof ToolCallContext c ? c : ToolCallContext.NONE;
+
+		boolean root = observations.getCurrentObservation() == null;
+		Observation observation = root
+				? trace.start("call-tool", RequestTrace.SURFACE_TOOLS, null)
+				: Observation.createNotStarted("tool-" + tool, observations);
+		RequestTrace.type(observation, LangfuseAttributes.TYPE_TOOL);
+		RequestTrace.input(observation, json(args[2] instanceof Map<?, ?> m ? m : Map.of()));
+		RequestTrace.spanMetadata(observation, "tool", tool);
+		RequestTrace.spanMetadata(observation, "node", node);
+		RequestTrace.spanMetadata(observation, "caseId", context.caseId());
+		RequestTrace.spanMetadata(observation, "actingUser", context.actingUser());
+		if (root) {
+			RequestTrace.session(observation, context.caseId());
+			RequestTrace.metadata(observation, "tool", tool);
+		}
+		else {
+			observation.start();
+		}
+		try (Observation.Scope ignored = observation.openScope()) {
+			Object result = joinPoint.proceed();
+			if (result instanceof ToolCallResult r) {
+				describeToolCall(observation, r);
+			}
+			return result;
+		}
+		catch (Throwable failure) {
+			observation.error(failure);
+			throw failure;
+		}
+		finally {
+			observation.stop();
+			if (root) {
+				TraceIdentity.clear();
+			}
+		}
+	}
+
+	/**
+	 * One trace per Tool explorer run, named for what the person did, with the
+	 * case as the session. The gateway's tool span nests under it, so the trace
+	 * shows the request and the call it made, refused or not.
+	 */
+	@Around("toolExplorerCall()")
+	public Object traceToolExplorerCall(ProceedingJoinPoint joinPoint) throws Throwable {
+		CallRequest request = argument(joinPoint, CallRequest.class);
+		Observation observation = trace.start("explore-tool", RequestTrace.SURFACE_TOOLS, null);
+		if (request != null) {
+			RequestTrace.input(observation, json(Map.of("node", request.node(), "tool", request.tool(),
+					"arguments", request.arguments() == null ? Map.of() : request.arguments())));
+			RequestTrace.session(observation, request.caseId());
+			RequestTrace.metadata(observation, "tool", request.tool());
+			RequestTrace.metadata(observation, "node", request.node());
+		}
+		try (Observation.Scope ignored = observation.openScope()) {
+			Object result = joinPoint.proceed();
+			if (result instanceof CallResponse response) {
+				ToolCallResult r = response.result();
+				RequestTrace.output(observation, r.ok() ? r.output() : r.message());
+				RequestTrace.metadata(observation, "status", r.status().name());
+			}
+			return result;
+		}
+		catch (Throwable failure) {
+			observation.error(failure);
+			throw failure;
+		}
+		finally {
+			observation.stop();
+			TraceIdentity.clear();
+		}
+	}
+
+	private static void describeToolCall(Observation observation, ToolCallResult r) {
+		RequestTrace.output(observation, r.ok() ? r.output() : r.message());
+		RequestTrace.spanMetadata(observation, "status", r.status().name());
+		RequestTrace.spanMetadata(observation, "connection", r.connection());
+		RequestTrace.spanMetadata(observation, "durationMs", String.valueOf(r.durationMillis()));
+		switch (r.status()) {
+			case BLOCKED, UNKNOWN_TOOL -> RequestTrace.level(observation, LangfuseAttributes.LEVEL_WARNING, r.message());
+			case TOOL_ERROR, UNAVAILABLE -> RequestTrace.level(observation, LangfuseAttributes.LEVEL_ERROR, r.message());
+			case OK -> { }
+		}
+	}
+
+	private static String json(Map<?, ?> value) {
+		try {
+			return JSON.writeValueAsString(value);
+		}
+		catch (RuntimeException ex) {
+			return String.valueOf(value);
 		}
 	}
 

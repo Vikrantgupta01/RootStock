@@ -2,6 +2,13 @@
 
 The Vinnies demo domain for Sinew Rootstock. **All data is fictional.**
 
+- `vinnies-mcp-server/`: the client's system (see below).
+- `vinnies-pack/`: Rootstock's configuration for Vinnies. Rootstock reads it; it is not
+  part of the client's system. Today it holds `packs/vinnies/tools.yaml`: the MCP
+  connection, the tools, and which workflow step (node) may call which. Point Rootstock
+  at it with `ROOTSTOCK_TOOLS_FILE=<repo>/vinnies/vinnies-pack/packs/vinnies/tools.yaml`
+  in `rootstock-core/.env`. The ontology, graph and agents join it from Iteration 4.
+
 `vinnies-mcp-server` is a dummy St Vincent de Paul (Vinnies) application. It plays the
 client's existing system, a stand-in for the system a real client already runs, and
 exposes its functions as MCP tools over HTTP, which is how Rootstock will reach it.
@@ -104,7 +111,7 @@ npx @modelcontextprotocol/inspector --cli http://localhost:8081/mcp --transport 
   --tool-arg "name=Linh Tran" --tool-arg suburb=Blacktown
 ```
 
-Demo scripts: [Iteration 1](docs/demo-1.md) (find a household) and [Iteration 2](docs/demo-2.md) (all read tools, secured).
+Demo scripts: [Iteration 1](docs/demo-1.md) (find a household), [Iteration 2](docs/demo-2.md) (all read tools, secured) and [Iteration 3](docs/demo-3.md) (Rootstock calls the tools: Tool explorer).
 
 ## Tests
 

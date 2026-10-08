@@ -31,6 +31,18 @@ public final class LangfuseAttributes {
 	/** Output of a non-generation observation, as a JSON string. */
 	public static final String OBSERVATION_OUTPUT = "langfuse.observation.output";
 
+	/** Prefix: {@code langfuse.observation.metadata.<key>} is filterable metadata on this span alone. */
+	public static final String OBSERVATION_METADATA_PREFIX = "langfuse.observation.metadata.";
+
+	/** DEBUG, DEFAULT, WARNING or ERROR; lets failed or refused steps stand out without opening them. */
+	public static final String OBSERVATION_LEVEL = "langfuse.observation.level";
+
+	/** Why an observation is at WARNING or ERROR, in words. */
+	public static final String OBSERVATION_STATUS_MESSAGE = "langfuse.observation.status_message";
+
+	public static final String LEVEL_WARNING = "WARNING";
+	public static final String LEVEL_ERROR = "ERROR";
+
 	public static final String TRACE_NAME = "langfuse.trace.name";
 	public static final String SESSION_ID = "langfuse.session.id";
 	public static final String USER_ID = "langfuse.user.id";

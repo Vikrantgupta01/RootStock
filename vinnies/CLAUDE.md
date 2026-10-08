@@ -5,6 +5,10 @@ Vinnies-specific lives here; `rootstock-core` never references this folder.
 
 - `vinnies-mcp-server/` — the dummy St Vincent de Paul (Vinnies) application. It plays the
   client's existing system and exposes its functions as MCP tools. Its own Maven project.
+- `vinnies-pack/` — Rootstock's configuration for Vinnies (Sinew's side, not the client's).
+  Rootstock reads `packs/vinnies/tools.yaml` through `ROOTSTOCK_TOOLS_FILE`. **A new MCP tool
+  is only callable by Rootstock once it is listed there**, with READ or WRITE and on a
+  node's allowlist; WRITE tools only in `commit`. Never put secrets in it: `${...}` from `.env`.
 
 All repo-wide rules in `../CLAUDE.md` apply. The rules below are specific to Vinnies.
 

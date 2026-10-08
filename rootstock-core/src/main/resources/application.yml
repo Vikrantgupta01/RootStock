@@ -1,4 +1,9 @@
 spring:
+  config:
+    # Client systems Rootstock may call over MCP (rootstock.tools.*). Rootstock
+    # ships none: a domain supplies them in its own file, named here by path.
+    # Unset, nothing is imported and no MCP connection exists.
+    import: optional:file:${ROOTSTOCK_TOOLS_FILE:}
   application:
     name: rootstock
 
