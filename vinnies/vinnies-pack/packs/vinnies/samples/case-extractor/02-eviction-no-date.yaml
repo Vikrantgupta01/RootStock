@@ -1,0 +1,13 @@
+input: |
+  Mt Druitt. Couple, no kids. Behind 6 wks on rent after he lost shifts.
+  Agent has given them a notice to vacate, 14 days.
+  Didn't want to talk about other bills. Will call them back re options.
+expect:
+  visitDate: null
+  urgency: HIGH
+  riskFlags: [EVICTION]
+  household.suburb: Mt Druitt
+  household.adults: 2
+  household.children: 0
+  needs.category: [RENT]
+missing: [visitDate]

@@ -16,14 +16,23 @@ import com.rootstock.core.graph.PackGraph;
 import com.rootstock.core.graph.PackGraphLoader;
 import com.rootstock.core.graph.ProposedAction;
 import com.rootstock.core.graph.RepairsPack;
+import com.rootstock.core.graph.nodes.IngestNode;
+import com.rootstock.core.graph.nodes.RulesNode;
+import com.rootstock.core.graph.nodes.StructuredExtraction;
+import com.rootstock.core.graph.nodes.StructuredExtractionTest;
 import com.rootstock.core.graph.stub.StubNodes;
+import com.rootstock.core.llm.BundledPrompts;
+import com.rootstock.core.llm.PromptRegistry;
+import com.rootstock.core.llm.ScriptedChatModel;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Stream;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.bsc.langgraph4j.action.NodeAction;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -199,6 +208,45 @@ class CaseRunServiceTest {
 		assertThat(run.events()).extracting(RunEvent::type).contains(RunEvent.Type.NODE_FAILED)
 				.last().isEqualTo(RunEvent.Type.RUN_FAILED);
 		assertThat(observed).contains("fail validate", "run-failed");
+	}
+
+	/** The stubs, with the real ingest, rules and extraction over a scripted model. */
+	private static NodeRegistry realExtraction(ScriptedChatModel model) {
+		PromptRegistry prompts = new PromptRegistry(null, Duration.ofMinutes(5), Clock.systemUTC());
+		prompts.addBundled(BundledPrompts.load(RepairsPack.dir()));
+		List<NodeFactory> real = List.of(new IngestNode(), new RulesNode(),
+				new StructuredExtraction(model.service(), prompts, Clock.systemUTC()));
+		List<NodeFactory> factories = new ArrayList<>(StubNodes.all(Duration.ZERO).stream()
+				.filter(f -> real.stream().noneMatch(r -> r.kind() == f.kind() && r.type().equals(f.type()))).toList());
+		factories.addAll(real);
+		return new NodeRegistry(factories);
+	}
+
+	@Test
+	void aRequiredFieldTheInputDoesNotGiveBecomesAClarifyQuestionNotAMadeUpValue() throws Exception {
+		CaseRun run = finished(service(RepairsPack.load(), realExtraction(new ScriptedChatModel(
+				StructuredExtractionTest.VALID)), List.of()).start(null, "Water everywhere in the kitchen", Map.of(),
+						"user-1"));
+
+		assertThat(run.pause()).isEqualTo(new CaseRun.Pause("clarify", false));
+		assertThat(nodesRun(run)).containsExactly("ingest", "extract", "enrich", "validate", "clarify");
+		assertThat(run.result().get("record")).asInstanceOf(InstanceOfAssertFactories.MAP)
+				.containsEntry("reportedOn", null);
+		assertThat(run.result().get("issues")).asInstanceOf(InstanceOfAssertFactories.LIST).singleElement()
+				.isEqualTo(new CaseIssue(RulesNode.REQUIRED_FIELD, CaseIssue.BLOCKING, CaseIssue.SUBMITTER,
+						"Missing reportedOn", "reportedOn"));
+		assertThat(run.input()).isEqualTo("Water everywhere in the kitchen");
+	}
+
+	@Test
+	void outputThatNeverMatchesTheSchemaParksTheCase() throws Exception {
+		CaseRun run = finished(service(RepairsPack.load(), realExtraction(new ScriptedChatModel(
+				StructuredExtractionTest.WRONG_CODE)), List.of()).start(null, "Tap leaking", Map.of(), "user-1"));
+
+		assertThat(run.status()).isEqualTo(CaseRun.Status.PARKED);
+		assertThat(run.error()).contains("did not match 'job-intake' after 3 attempt(s)");
+		assertThat(run.events().getLast().type()).isEqualTo(RunEvent.Type.RUN_PARKED);
+		assertThat(observed).contains("fail extract", "run-parked");
 	}
 
 	@Test

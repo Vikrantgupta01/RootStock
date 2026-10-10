@@ -7,9 +7,10 @@ import com.rootstock.core.ontology.ResolvedOntology;
  *
  * @param agent    the agent definition, for an agent node; null for a plain node
  * @param ontology the pack's ontology; null when the pack has none
+ * @param graph    the whole graph and its agents, for a node that works with what others produce
  */
 public record NodeContext(String pack, GraphDefinition.NodeSpec node, AgentDefinition agent,
-		ResolvedOntology ontology) {
+		ResolvedOntology ontology, PackGraph graph) {
 
 	/** The node's type: its own, or its agent's. */
 	public String type() {

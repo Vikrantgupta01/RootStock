@@ -1,5 +1,7 @@
 package com.rootstock.runtime.observability;
 
+import com.rootstock.core.llm.LlmService;
+import com.rootstock.core.llm.PromptTemplate;
 import io.micrometer.common.KeyValue;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationFilter;
@@ -66,7 +68,25 @@ public class ChatContentObservationFilter implements ObservationFilter {
 		// explicit type always wins over inference and cannot drift.
 		add(chat, LangfuseAttributes.OBSERVATION_TYPE, LangfuseAttributes.TYPE_GENERATION);
 		correctResponseModel(chat);
+		linkPrompt(chat);
 		return chat;
+	}
+
+	/**
+	 * A case agent's call names the prompt it rendered. One from Langfuse is linked
+	 * by name and version, so Langfuse shows which version produced which output;
+	 * a bundled copy has no version there, so it is only noted in metadata.
+	 */
+	private static void linkPrompt(ChatModelObservationContext context) {
+		LlmService.promptInUse().ifPresent(prompt -> {
+			if (prompt.source() == PromptTemplate.Source.LANGFUSE && prompt.version() != null) {
+				context.addHighCardinalityKeyValue(KeyValue.of(LangfuseAttributes.PROMPT_NAME, prompt.name()));
+				context.addHighCardinalityKeyValue(KeyValue.of(LangfuseAttributes.PROMPT_VERSION,
+						String.valueOf(prompt.version())));
+			}
+			context.addHighCardinalityKeyValue(KeyValue.of(LangfuseAttributes.OBSERVATION_METADATA_PREFIX + "prompt",
+					prompt.describe()));
+		});
 	}
 
 	/**

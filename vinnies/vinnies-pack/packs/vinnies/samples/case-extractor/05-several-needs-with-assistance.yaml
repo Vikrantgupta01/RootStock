@@ -1,0 +1,18 @@
+input: |
+  Visit 9 October 2026, St Marys. Mum, dad and 3 kids.
+  Power was cut off yesterday, kids went hungry last night, nothing to eat in the house today.
+  Gave them a $100 Woolies voucher on the spot.
+  Will refer them to the energy ombudsman about the reconnection.
+  They agreed to us sharing their details for referrals.
+expect:
+  visitDate: "2026-10-09"
+  urgency: HIGH
+  riskFlags: [DISCONNECTION, NO_FOOD]
+  household.suburb: St Marys
+  household.adults: 2
+  household.children: 3
+  household.consentGiven: true
+  needs.category: [ENERGY_BILL, FOOD]
+  assistance.category: [FOOD]
+  assistance.amountAud: 100
+missing: []

@@ -13,7 +13,7 @@
     },
     "riskFlags" : {
       "type" : "array",
-      "description" : "DISCONNECTION: Power, gas or water is about to be, or has been, cut off; EVICTION: The household has been told to leave its home; NO_FOOD: There is no food in the house today; SAFETY: Someone in the household is unsafe at home.",
+      "description" : "DISCONNECTION: Power, gas or water is about to be, or has been, cut off; EVICTION: The household has been told to leave its home; NO_FOOD: There is no food in the house today. Food running low is a FOOD need, not this risk; SAFETY: Someone in the household is unsafe at home.",
       "items" : {
         "type" : "string",
         "enum" : [ "DISCONNECTION", "EVICTION", "NO_FOOD", "SAFETY" ]

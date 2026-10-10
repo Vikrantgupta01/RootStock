@@ -43,6 +43,10 @@ public final class LangfuseAttributes {
 	public static final String LEVEL_WARNING = "WARNING";
 	public static final String LEVEL_ERROR = "ERROR";
 
+	/** Links a generation to the Langfuse prompt version it used. */
+	public static final String PROMPT_NAME = "langfuse.observation.prompt.name";
+	public static final String PROMPT_VERSION = "langfuse.observation.prompt.version";
+
 	public static final String TRACE_NAME = "langfuse.trace.name";
 	public static final String SESSION_ID = "langfuse.session.id";
 	public static final String USER_ID = "langfuse.user.id";

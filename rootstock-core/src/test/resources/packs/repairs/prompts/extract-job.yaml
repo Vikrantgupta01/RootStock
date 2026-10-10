@@ -1,0 +1,11 @@
+name: repairs/extract-job
+type: chat
+labels: [production]
+prompt:
+  - role: system
+    content: |
+      Extract the repair job. Today is {{today}}.
+      {{glossary}}
+      Schema: {{schema}}
+  - role: user
+    content: "Report: {{report}}"

@@ -119,6 +119,10 @@ public class CaseRunTracing implements RunObserver {
 				RequestTrace.output(root, "Failed");
 				RequestTrace.level(root, LangfuseAttributes.LEVEL_ERROR, run.error());
 			}
+			case PARKED -> {
+				RequestTrace.output(root, "Parked for a person");
+				RequestTrace.level(root, LangfuseAttributes.LEVEL_WARNING, run.error());
+			}
 			case RUNNING -> {
 			}
 		}

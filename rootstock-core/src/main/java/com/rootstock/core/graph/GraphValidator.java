@@ -46,8 +46,16 @@ public final class GraphValidator {
 	 * @param ontology        the pack's ontology; null when it has none or it is invalid
 	 * @param ontologyMissing why there is no ontology, for messages; null when there is one
 	 */
+	/**
+	 * @param modelProfiles the configured model profiles an agent's {@code model} may name; null to not check
+	 */
 	public record Context(NodeRegistry registry, Set<String> routers, ToolCatalog tools, ResolvedOntology ontology,
-			String ontologyMissing) {
+			String ontologyMissing, Set<String> modelProfiles) {
+
+		public Context(NodeRegistry registry, Set<String> routers, ToolCatalog tools, ResolvedOntology ontology,
+				String ontologyMissing) {
+			this(registry, routers, tools, ontology, ontologyMissing, null);
+		}
 	}
 
 	public List<GraphProblem> validate(PackGraph pack, Context context) {
@@ -136,6 +144,11 @@ public final class GraphValidator {
 			if (context.registry().agent(spec.type()).isEmpty()) {
 				problems.add(new GraphProblem(file, "spec.type", "unknown agent type '" + spec.type() + "'; known: "
 						+ context.registry().agentTypes()));
+			}
+			if (spec.model() != null && context.modelProfiles() != null
+					&& !context.modelProfiles().contains(spec.model())) {
+				problems.add(new GraphProblem(file, "spec.model", "unknown model profile '" + spec.model()
+						+ "'; configured (rootstock.llm.profiles): " + new TreeSet<>(context.modelProfiles())));
 			}
 			String writeTo = spec.output().writeTo();
 			if (!channels.contains(writeTo)) {

@@ -11,7 +11,7 @@ RiskFlag: Signs that something could go badly wrong soon.
 Used for Case.riskFlags.
 - DISCONNECTION: Power, gas or water is about to be, or has been, cut off. Also said as: disconnection notice, final notice, power cut off.
 - EVICTION: The household has been told to leave its home. Also said as: notice to vacate, being evicted.
-- NO_FOOD: There is no food in the house today. Also said as: nothing to eat, kids went hungry.
+- NO_FOOD: There is no food in the house today. Food running low is a FOOD need, not this risk. Also said as: nothing to eat, kids went hungry.
 - SAFETY: Someone in the household is unsafe at home. Also said as: domestic violence, afraid at home.
 
 NeedCategory: What a household needs help with.

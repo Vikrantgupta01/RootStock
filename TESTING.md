@@ -41,13 +41,23 @@ without it that test is skipped.)
   route. `ConfiguredPackGraphsTest` checks each configured pack's graph against
   its own `tools.yaml`. `CaseControllerTest` runs real cases behind the API,
   including the event stream.
+- Real nodes (`core.graph.nodes`) and `LlmService` run against
+  `ScriptedChatModel` (a chat model that replies from a script): extraction
+  that matches, is retried with what was wrong, or never matches and parks the
+  case; a missing required field that sends a whole run to clarify
+  (`CaseRunServiceTest`); timeouts, and the trace context reaching the call's
+  worker thread. `PromptRegistryTest` covers caching and every fallback to the
+  bundled copy.
 - **Integration tests** (`*IT`, `mvn verify`) start the whole app against RDS
   in a throwaway schema (`rootstock_test_<timestamp>_<id>`), created and
   Flyway-migrated for the run and dropped at the end (`ThrowawaySchemaConfig`).
   `ThrowawaySchemaIT` checks the app really runs in that schema. A killed run
   can leave a schema behind: `DROP SCHEMA <name> CASCADE`.
 - **Live tests** (`@Tag("live")`) call Bedrock, so they're excluded unless
-  asked for. `BedrockChatLiveIT` makes one real model call.
+  asked for. `BedrockChatLiveIT` makes one real model call. `PackSamplesLiveIT`
+  runs each configured pack's structured-extraction agents on their sample
+  inputs (`<pack>/samples/<agent>/*.yaml`) with the real model and prompt, and
+  checks each record field by field (one model call per sample).
 
 ## 2. One-time AWS setup (required — there's no offline mode)
 

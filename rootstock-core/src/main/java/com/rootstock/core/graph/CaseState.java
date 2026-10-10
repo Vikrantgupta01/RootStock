@@ -20,6 +20,8 @@ public class CaseState extends AgentState {
 	public static final String CASE_ID = "caseId";
 	public static final String RUN_ID = "runId";
 	public static final String PACK = "pack";
+	/** The run's Langfuse trace, when tracing is on. */
+	public static final String TRACE_ID = "traceId";
 	/** The input as submitted, e.g. a member's visit notes. */
 	public static final String RAW_INPUT = "rawInput";
 	/** Run options, e.g. the stub nodes' {@code simulate}. */
@@ -30,7 +32,7 @@ public class CaseState extends AgentState {
 	public static final String REVIEW = "review";
 
 	/** Keys a graph may read or route on without declaring them. */
-	public static final List<String> ENGINE_KEYS = List.of(CASE_ID, RUN_ID, PACK, RAW_INPUT, OPTIONS, CLARIFY_ROUNDS,
+	public static final List<String> ENGINE_KEYS = List.of(CASE_ID, RUN_ID, PACK, TRACE_ID, RAW_INPUT, OPTIONS, CLARIFY_ROUNDS,
 			REVIEW);
 
 	public CaseState(Map<String, Object> data) {

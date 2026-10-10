@@ -1,0 +1,15 @@
+input: |
+  Visit 6 Oct 2026, Blacktown. Single mum + 2 kids (7 and 4).
+  Has a final disconnection notice from the power co, $612 owing, cut off date is Thursday.
+  Fridge pretty bare too, asked if we could help w groceries this week.
+  Happy for us to share details if we refer her on.
+expect:
+  visitDate: "2026-10-06"
+  urgency: HIGH
+  riskFlags: [DISCONNECTION]
+  household.suburb: Blacktown
+  household.adults: 1
+  household.children: 2
+  household.consentGiven: true
+  needs.category: [ENERGY_BILL, FOOD]
+missing: []

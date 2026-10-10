@@ -31,27 +31,28 @@ final class CaseViews {
 	}
 
 	/**
-	 * @param events and {@code result} only in a single case's detail
+	 * @param input, {@code events} and {@code result} only in a single case's detail; input as submitted
 	 * @param traceUrl the run's Langfuse trace; null when tracing is off
 	 */
 	record RunView(String caseId, String runId, String pack, String graph, String graphVersion, CaseRun.Status status,
-			PauseView pause, String error, Instant startedAt, String traceUrl, List<RunEvent> events,
+			PauseView pause, String error, Instant startedAt, String traceUrl, String input, List<RunEvent> events,
 			Map<String, Object> result) {
 	}
 
 	static RunView summary(CaseRun run, String traceUrl) {
-		return view(run, traceUrl, null, null);
+		return view(run, traceUrl, null, null, null);
 	}
 
 	static RunView detail(CaseRun run, String traceUrl) {
-		return view(run, traceUrl, run.events(), run.result());
+		return view(run, traceUrl, run.input(), run.events(), run.result());
 	}
 
-	private static RunView view(CaseRun run, String traceUrl, List<RunEvent> events, Map<String, Object> result) {
+	private static RunView view(CaseRun run, String traceUrl, String input, List<RunEvent> events,
+			Map<String, Object> result) {
 		CaseRun.Pause pause = run.pause();
 		return new RunView(run.caseId(), run.runId(), run.pack(), run.graph(), run.graphVersion(), run.status(),
 				pause == null ? null : new PauseView(pause.node(), pause.before()), run.error(), run.startedAt(),
-				traceUrl, events, result);
+				traceUrl, input, events, result);
 	}
 
 	/** The graph's shape, for drawing it. */

@@ -1,0 +1,13 @@
+input: |
+  2026-10-02 home visit Penrith. hh of 4 (2A 2C). Regular family, doing ok.
+  Pantry a bit low, would like a food hamper but said no rush, next visit is fine.
+  No other issues raised.
+expect:
+  visitDate: "2026-10-02"
+  urgency: LOW
+  riskFlags: []
+  household.suburb: Penrith
+  household.adults: 2
+  household.children: 2
+  needs.category: [FOOD]
+missing: []

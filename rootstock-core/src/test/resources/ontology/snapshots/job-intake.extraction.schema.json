@@ -1,0 +1,102 @@
+{
+  "$schema" : "https://json-schema.org/draft/2020-12/schema",
+  "title" : "Job",
+  "description" : "A repair job opened from a tenant's report.",
+  "type" : "object",
+  "additionalProperties" : false,
+  "required" : [ "priority", "reportedOn", "tenant", "defects" ],
+  "properties" : {
+    "priority" : {
+      "type" : [ "string", "null" ],
+      "enum" : [ "LOW", "URGENT", null ],
+      "description" : "LOW: Can wait for a routine visit; URGENT: Risk to safety or the home within 24 hours. Null when the input does not say; never guess."
+    },
+    "hazards" : {
+      "type" : "array",
+      "description" : "FLOODING: Water is spreading; EXPOSED_WIRING: Live wires can be touched.",
+      "items" : {
+        "type" : "string",
+        "enum" : [ "FLOODING", "EXPOSED_WIRING" ]
+      }
+    },
+    "reportedOn" : {
+      "type" : [ "string", "null" ],
+      "format" : "date",
+      "description" : "Null when the input does not say; never guess."
+    },
+    "tenant" : {
+      "anyOf" : [ {
+        "$ref" : "#/$defs/Tenant"
+      }, {
+        "type" : "null"
+      } ],
+      "description" : "Null when the input does not say; never guess."
+    },
+    "defects" : {
+      "type" : "array",
+      "items" : {
+        "$ref" : "#/$defs/Defect"
+      }
+    },
+    "visits" : {
+      "type" : "array",
+      "items" : {
+        "$ref" : "#/$defs/Visit"
+      }
+    }
+  },
+  "$defs" : {
+    "Tenant" : {
+      "title" : "Tenant",
+      "description" : "The person who reported the problem.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "name" ],
+      "properties" : {
+        "name" : {
+          "type" : [ "string", "null" ],
+          "description" : "Null when the input does not say; never guess."
+        },
+        "phone" : {
+          "type" : [ "string", "null" ]
+        }
+      }
+    },
+    "Defect" : {
+      "title" : "Defect",
+      "description" : "One thing that needs fixing.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "trade" ],
+      "properties" : {
+        "trade" : {
+          "type" : [ "string", "null" ],
+          "enum" : [ "PLUMBING", "ELECTRICAL", null ],
+          "description" : "PLUMBING: Water, taps, toilets, drains and hot water; ELECTRICAL: Power points, lights, switchboard. Null when the input does not say; never guess."
+        },
+        "room" : {
+          "type" : [ "string", "null" ]
+        }
+      }
+    },
+    "Visit" : {
+      "title" : "Visit",
+      "description" : "A tradesperson's visit to fix defects.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "trade" ],
+      "properties" : {
+        "trade" : {
+          "type" : [ "string", "null" ],
+          "enum" : [ "PLUMBING", "ELECTRICAL", null ],
+          "description" : "PLUMBING: Water, taps, toilets, drains and hot water; ELECTRICAL: Power points, lights, switchboard. Null when the input does not say; never guess."
+        },
+        "estimateAud" : {
+          "type" : [ "number", "null" ],
+          "minimum" : 0,
+          "maximum" : 10000
+        }
+      }
+    }
+  }
+}

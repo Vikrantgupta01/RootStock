@@ -27,6 +27,32 @@ class JsonSchemaGeneratorTest {
 	}
 
 	@Test
+	void jobIntakeExtractionSchemaMatchesTheSnapshot() {
+		Snapshots.assertMatches(SNAPSHOTS.resolve("job-intake.extraction.schema.json"),
+				generator.generateJson(OntologyFixtures.sample(), "job-intake", JsonSchemaGenerator.Mode.EXTRACTION));
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void extractionModeLetsRequiredFieldsBeNullAndLeavesOutIds() {
+		Map<String, Object> schema = generator.generate(OntologyFixtures.sample(), "job-intake",
+				JsonSchemaGenerator.Mode.EXTRACTION);
+		Map<String, Object> props = (Map<String, Object>) schema.get("properties");
+
+		// No ids: the model cannot know them.
+		assertThat(props).containsOnlyKeys("priority", "hazards", "reportedOn", "tenant", "defects", "visits");
+		// Still required (the model must say something), but null is an answer.
+		assertThat((List<String>) schema.get("required")).containsExactly("priority", "reportedOn", "tenant", "defects");
+		Map<String, Object> reportedOn = (Map<String, Object>) props.get("reportedOn");
+		assertThat(reportedOn.get("type")).isEqualTo(List.of("string", "null"));
+		assertThat((String) reportedOn.get("description")).endsWith(JsonSchemaGenerator.NULL_WHEN_ABSENT);
+		assertThat((List<Object>) ((Map<String, Object>) props.get("priority")).get("enum")).containsNull();
+		assertThat((Map<String, Object>) props.get("tenant")).containsKey("anyOf");
+		// A list may be empty.
+		assertThat((Map<String, Object>) props.get("defects")).doesNotContainKey("minItems");
+	}
+
+	@Test
 	@SuppressWarnings("unchecked")
 	void embedsReferencesAndLeavesOutTheRest() {
 		Map<String, Object> schema = generator.generate(OntologyFixtures.sample(), "job-intake");

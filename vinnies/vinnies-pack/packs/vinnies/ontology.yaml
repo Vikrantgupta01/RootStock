@@ -119,7 +119,7 @@ vocabularies:
       definition: The household has been told to leave its home.
       synonyms: [notice to vacate, being evicted]
     NO_FOOD:
-      definition: There is no food in the house today.
+      definition: There is no food in the house today. Food running low is a FOOD need, not this risk.
       synonyms: [nothing to eat, kids went hungry]
     SAFETY:
       definition: Someone in the household is unsafe at home.

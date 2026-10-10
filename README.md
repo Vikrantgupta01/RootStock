@@ -124,6 +124,10 @@ Backend config lives in `rootstock-core/src/main/resources/application.yml`. Key
 | `management.tracing.sampling.probability` | `LANGFUSE_SAMPLE_RATE` | `1.0` |
 | `rootstock.observability.langfuse.environment` | `LANGFUSE_ENVIRONMENT` | `development` |
 | `spring.config.import` (`rootstock.tools.*`) | `ROOTSTOCK_TOOLS_FILE` | _(unset: no client systems)_ path to a domain pack's `tools.yaml` |
+| `rootstock.llm.profiles.extraction.model` | `LLM_EXTRACTION_MODEL` | _(blank: `BEDROCK_MODEL`)_ model for the `extraction` profile |
+| `rootstock.llm.profiles.fast.model` | `LLM_FAST_MODEL` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` |
+| `rootstock.llm.profiles.drafting.model` | `LLM_DRAFTING_MODEL` | _(blank: `BEDROCK_MODEL`)_ |
+| `rootstock.llm.prompts.cache-ttl` | `LLM_PROMPT_CACHE_TTL` | `5m` (how long a prompt fetched from Langfuse is reused) |
 | `rootstock.cases.stub-pause` | `CASES_STUB_PAUSE` | `600ms` (how long each stub node takes, so progress is visible) |
 | `rootstock.packs.paths` | `ROOTSTOCK_PACKS_PATHS` | _(unset: no packs)_ comma-separated folders of domain packs, e.g. `vinnies/vinnies-pack/packs` |
 | `rootstock.cors.allowed-origins` | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` |
@@ -485,10 +489,26 @@ graph into LangGraph4j (`core.graph.GraphCompiler`).
   checkpointer copies state that way.
 - **Nodes** are Rootstock building blocks: node types (`ingest`, `rules`,
   `clarify`, `human-review`, `tool-executor`, `await-input`) or agents whose
-  type is `structured-extraction`, `tool-calling`, `judge` or `drafter`. **All
-  are stubs for now** (`core.graph.stub.StubNodes`): they record what they would
-  do in the `audit` channel and never call a model or a client system. Real
-  implementations replace them type by type.
+  type is `structured-extraction`, `tool-calling`, `judge` or `drafter`. Real
+  so far (`core.graph.nodes`): `ingest` (tidies the text, records the case and
+  trace ids), `structured-extraction` (below) and `rules`, which so far checks
+  one thing: every field the ontology requires is in the extracted record; each
+  missing one is a BLOCKING issue the submitter can answer, so the case goes to
+  clarify. The rest are stubs (`core.graph.stub.StubNodes`) that record what
+  they would do in the `audit` channel and never call a model or a client
+  system; real implementations replace them type by type.
+- **`structured-extraction`**: one model call through `LlmService` with the
+  agent's model profile and its Langfuse prompt (fetched by name and label
+  through `PromptRegistry`, cached, with the pack's `prompts/` copy as the
+  fallback). The prompt gets the agent's inputs plus `{{schema}}` (the
+  projection's schema in **extraction mode**: any single field may be null,
+  lists may be empty, client-system ids are left out, so the model never has to
+  invent a value), `{{glossary}}` and `{{today}}`. A reply that doesn't match
+  the schema is sent back with what was wrong, up to `limits.retries` times
+  (default 2); after that the run stops as **PARKED** for a person.
+- **Model profiles** (`rootstock.llm.profiles`): agents name a kind of model
+  (`extraction`, `fast`, `drafting`), never a model id; an agent naming an
+  unknown profile stops startup.
 - **Routes** use a small fixed condition set, never code:
   `issues.anySeverity: BLOCKING`, `issues.answerableBy: SUBMITTER` (both on the
   same issue), `actions.includesType: CHASE_MESSAGE`, `review.decision: APPROVED`,
@@ -506,11 +526,13 @@ graph into LangGraph4j (`core.graph.GraphCompiler`).
 
 **Cases screen** (`/cases`): submit visit notes and watch each node light up
 as the run goes, until it pauses (before review, or after clarify) or ends. It
-shows the event log, the issues, actions and audit trail the stubs produced,
-and a link to the run's Langfuse trace: one `process-case` trace per run, with
-the case id as the session and a `node-<id>` span per node. A **Simulate**
-option drives the stubs down the clarify or chase route until real validation
-exists. Endpoints: `POST /api/cases` `{input, simulate?}` (starts a run,
+shows the notes as submitted beside the extracted record (codes explained from
+the ontology on hover, required fields the notes don't give marked), the event
+log, the issues, actions and audit trail, and a link to the run's Langfuse
+trace: one `process-case` trace per run, with the case id as the session, a
+`node-<id>` span per node, and the extraction's generation linked to the
+Langfuse prompt version it used. A **Simulate** option still drives the chase
+route until the pack's own rules exist. Endpoints: `POST /api/cases` `{input, simulate?}` (starts a run,
 returns at once), `GET /api/cases` (your cases; all for an admin),
 `GET /api/cases/{id}`, `GET /api/cases/{id}/events` (server-sent events: every
 event so far, then each new one), `GET /api/cases/graph`.

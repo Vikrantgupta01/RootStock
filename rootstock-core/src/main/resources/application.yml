@@ -147,6 +147,28 @@ rootstock:
     # Reason steps per question (each is one model call). The system prompt
     # defaults to the one in AgentProperties; override it here if needed.
     max-iterations: ${AGENT_MAX_ITERATIONS:6}
+  llm:
+    # Model profiles case agents name in their YAML (model: extraction). A blank
+    # model means the default chat model (BEDROCK_MODEL). Low temperature for
+    # extraction and checks; a little higher for drafted messages.
+    profiles:
+      extraction:
+        model: ${LLM_EXTRACTION_MODEL:}
+        temperature: 0.0
+        max-tokens: 4096
+      fast:
+        model: ${LLM_FAST_MODEL:us.anthropic.claude-haiku-4-5-20251001-v1:0}
+        temperature: 0.0
+        max-tokens: 2048
+      drafting:
+        model: ${LLM_DRAFTING_MODEL:}
+        temperature: 0.4
+        max-tokens: 4096
+    prompts:
+      # Prompts come from Langfuse by name and label, cached this long; when it is
+      # unreachable or lacks one, the copy in the pack's prompts/ folder is used.
+      cache-ttl: ${LLM_PROMPT_CACHE_TTL:5m}
+      fetch-timeout: 5s
   cases:
     # Each stub node takes this long, so a run's progress is visible on the
     # Cases screen. Goes away as real nodes replace the stubs.

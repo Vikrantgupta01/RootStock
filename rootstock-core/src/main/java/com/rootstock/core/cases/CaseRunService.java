@@ -1,6 +1,7 @@
 package com.rootstock.core.cases;
 
 import com.rootstock.core.graph.CaseGraph;
+import com.rootstock.core.graph.CaseParkedException;
 import com.rootstock.core.graph.CaseState;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,7 +49,7 @@ public final class CaseRunService implements AutoCloseable {
 				: graphs.forPack(pack).orElseThrow(() -> new NoGraphException("Pack '" + pack + "' has no graph"));
 
 		CaseRun run = new CaseRun(UUID.randomUUID().toString(), UUID.randomUUID().toString(), graph.pack(),
-				graph.name(), graph.version(), startedBy);
+				graph.name(), graph.version(), startedBy, input);
 		runs.add(run);
 		RunEvent started = run.started("Graph " + graph.name() + " " + graph.version() + " of pack " + graph.pack());
 		runs.notify(o -> o.runStarted(run, input));
@@ -58,6 +59,9 @@ public final class CaseRunService implements AutoCloseable {
 		initial.put(CaseState.CASE_ID, run.caseId());
 		initial.put(CaseState.RUN_ID, run.runId());
 		initial.put(CaseState.PACK, graph.pack());
+		if (run.traceId() != null) {
+			initial.put(CaseState.TRACE_ID, run.traceId());
+		}
 		initial.put(CaseState.RAW_INPUT, input);
 		initial.put(CaseState.OPTIONS, options == null ? Map.of() : Map.copyOf(options));
 		workers.submit(() -> execute(graph, run, initial));
@@ -92,8 +96,16 @@ public final class CaseRunService implements AutoCloseable {
 			run.publish(end);
 		}
 		catch (Exception | Error e) {
-			log.warn("Run {} of case {} failed: {}", run.runId(), run.caseId(), e.toString());
-			RunEvent end = run.failed(reason(e), result(last));
+			CaseParkedException parked = parked(e);
+			RunEvent end;
+			if (parked != null) {
+				log.info("Run {} of case {} parked: {}", run.runId(), run.caseId(), parked.getMessage());
+				end = run.parked(parked.getMessage(), result(last));
+			}
+			else {
+				log.warn("Run {} of case {} failed: {}", run.runId(), run.caseId(), e.toString());
+				end = run.failed(reason(e), result(last));
+			}
 			runs.notify(o -> o.runEnded(run));
 			run.publish(end);
 		}
@@ -105,8 +117,17 @@ public final class CaseRunService implements AutoCloseable {
 			return Map.of();
 		}
 		Map<String, Object> out = new LinkedHashMap<>(state.data());
-		List.of(CaseState.RUN_ID, CaseState.PACK, CaseState.RAW_INPUT, CaseState.OPTIONS).forEach(out::remove);
+		List.of(CaseState.RUN_ID, CaseState.PACK, CaseState.TRACE_ID, CaseState.RAW_INPUT, CaseState.OPTIONS).forEach(out::remove);
 		return out;
+	}
+
+	private static CaseParkedException parked(Throwable e) {
+		for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+			if (t instanceof CaseParkedException p) {
+				return p;
+			}
+		}
+		return null;
 	}
 
 	private static String reason(Throwable e) {

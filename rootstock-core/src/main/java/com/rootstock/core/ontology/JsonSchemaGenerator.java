@@ -32,9 +32,42 @@ public final class JsonSchemaGenerator {
 
 	public static final String DIALECT = "https://json-schema.org/draft/2020-12/schema";
 
+	/** Added to a field that extraction may leave empty. */
+	static final String NULL_WHEN_ABSENT = "Null when the input does not say; never guess.";
+
+	public enum Mode {
+
+		/** The record as it must finally be: every required field present. */
+		STRICT(true, false),
+
+		/**
+		 * What a model fills in from free text. Any single field may be null, meaning
+		 * the input does not give it, and a list may be empty, so the model never has
+		 * to invent a value; what is still missing is found afterwards
+		 * ({@link RequiredFields}) and asked for. Ids in the client system are left
+		 * out: the model cannot know them, and later steps look them up.
+		 */
+		EXTRACTION(false, true),
+
+		/** STRICT without the ids: what extraction is expected to fill. */
+		COMPLETE(false, false);
+
+		private final boolean references;
+		private final boolean nullable;
+
+		Mode(boolean references, boolean nullable) {
+			this.references = references;
+			this.nullable = nullable;
+		}
+	}
+
 	private static final JsonMapper JSON = JsonMapper.builder().enable(SerializationFeature.INDENT_OUTPUT).build();
 
 	public Map<String, Object> generate(ResolvedOntology o, String projectionName) {
+		return generate(o, projectionName, Mode.STRICT);
+	}
+
+	public Map<String, Object> generate(ResolvedOntology o, String projectionName, Mode mode) {
 		Projection p = o.own().projections().get(projectionName);
 		if (p == null) {
 			throw new IllegalArgumentException("No projection '" + projectionName + "' in " + o.own().name()
@@ -59,7 +92,7 @@ public final class JsonSchemaGenerator {
 		schema.put("$schema", DIALECT);
 		schema.put("title", root.name());
 		putIfText(schema, "description", root.description());
-		schema.putAll(object(o, root, embed, reference, placement, include.isEmpty() ? null : include, defs));
+		schema.putAll(object(o, root, embed, reference, placement, include.isEmpty() ? null : include, defs, mode));
 		if (!defs.isEmpty()) {
 			schema.put("$defs", defs);
 		}
@@ -67,7 +100,11 @@ public final class JsonSchemaGenerator {
 	}
 
 	public String generateJson(ResolvedOntology o, String projectionName) {
-		return JSON.writeValueAsString(generate(o, projectionName)) + "\n";
+		return generateJson(o, projectionName, Mode.STRICT);
+	}
+
+	public String generateJson(ResolvedOntology o, String projectionName, Mode mode) {
+		return JSON.writeValueAsString(generate(o, projectionName, mode)) + "\n";
 	}
 
 	/** For each embedded entity, the relation that first reaches it, breadth first from the root. */
@@ -102,7 +139,7 @@ public final class JsonSchemaGenerator {
 	 */
 	private Map<String, Object> object(ResolvedOntology o, Entity entity, Set<Entity> embed, Set<Entity> reference,
 			Map<Entity, ResolvedOntology.Declared<Relation>> placement, Map<String, Set<String>> include,
-			Map<String, Object> defs) {
+			Map<String, Object> defs, Mode mode) {
 		Map<String, Object> properties = new LinkedHashMap<>();
 		List<String> required = new ArrayList<>();
 
@@ -111,7 +148,8 @@ public final class JsonSchemaGenerator {
 			if (include != null && !include.containsKey(a.name())) {
 				continue;
 			}
-			properties.put(a.name(), attribute(o, d));
+			Map<String, Object> value = attribute(o, d);
+			properties.put(a.name(), mode.nullable && !a.many() ? nullable(value, a.required()) : value);
 			if (a.required()) {
 				required.add(a.name());
 			}
@@ -121,6 +159,9 @@ public final class JsonSchemaGenerator {
 			Entity target = o.target(d).orElseThrow();
 			String field = r.fieldOrName();
 			if (reference.contains(target)) {
+				if (!mode.references) {
+					continue;
+				}
 				// Always kept, even when include narrows the fields: a projection lists
 				// what it references on purpose, and an id carries no personal data.
 				String name = field + (r.many() ? "Refs" : "Ref");
@@ -144,10 +185,15 @@ public final class JsonSchemaGenerator {
 					Map<String, Object> def = new LinkedHashMap<>();
 					def.put("title", target.name());
 					putIfText(def, "description", target.description());
-					def.putAll(object(o, target, embed, reference, placement, sub, defs));
+					def.putAll(object(o, target, embed, reference, placement, sub, defs, mode));
 					defs.put(target.name(), def);
 				}
-				properties.put(field, many(r, Map.of("$ref", "#/$defs/" + target.name()), r.description()));
+				Map<String, Object> value = many(r, Map.of("$ref", "#/$defs/" + target.name()), r.description());
+				if (mode.nullable) {
+					// A list may be empty, a required single value null: never invented.
+					value = r.many() ? withoutMinItems(value) : nullable(value, r.required());
+				}
+				properties.put(field, value);
 				if (r.required() || (r.min() != null && r.min() > 0)) {
 					required.add(field);
 				}
@@ -233,6 +279,46 @@ public final class JsonSchemaGenerator {
 		}
 		array.put("items", item);
 		return array;
+	}
+
+	/**
+	 * The same field, allowed to be null (which means the same as leaving it out).
+	 * A required one says so, so the model knows null is the answer it should give.
+	 */
+	private static Map<String, Object> nullable(Map<String, Object> value, boolean required) {
+		Map<String, Object> out = new LinkedHashMap<>();
+		Object description = value.get("description");
+		if (value.containsKey("$ref")) {
+			out.put("anyOf", List.of(Map.of("$ref", value.get("$ref")), Map.of("type", "null")));
+		}
+		else {
+			value.forEach((k, v) -> {
+				if (k.equals("type")) {
+					out.put(k, List.of(v, "null"));
+				}
+				else if (k.equals("enum")) {
+					List<Object> codes = new ArrayList<>((List<?>) v);
+					codes.add(null);
+					out.put(k, codes);
+				}
+				else if (!k.equals("description")) {
+					out.put(k, v);
+				}
+			});
+		}
+		if (required) {
+			out.put("description", description == null ? NULL_WHEN_ABSENT : description + " " + NULL_WHEN_ABSENT);
+		}
+		else if (description != null) {
+			out.put("description", description);
+		}
+		return out;
+	}
+
+	private static Map<String, Object> withoutMinItems(Map<String, Object> value) {
+		Map<String, Object> out = new LinkedHashMap<>(value);
+		out.remove("minItems");
+		return out;
 	}
 
 	private static String withoutFullStop(String text) {

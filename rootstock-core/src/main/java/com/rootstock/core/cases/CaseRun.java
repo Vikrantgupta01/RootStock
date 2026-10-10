@@ -17,7 +17,9 @@ import java.util.function.Consumer;
 public final class CaseRun {
 
 	public enum Status {
-		RUNNING, PAUSED, COMPLETED, FAILED
+		RUNNING, PAUSED, COMPLETED, FAILED,
+		/** Stopped because a node needs a person to look at the case, e.g. output that never matched its schema. */
+		PARKED
 	}
 
 	/**
@@ -42,9 +44,12 @@ public final class CaseRun {
 	private Pause pause;
 	private String error;
 	private String traceId;
+	private final String input;
 	private Map<String, Object> result = Map.of();
 
-	CaseRun(String caseId, String runId, String pack, String graph, String graphVersion, String startedBy) {
+	CaseRun(String caseId, String runId, String pack, String graph, String graphVersion, String startedBy,
+			String input) {
+		this.input = input;
 		this.caseId = caseId;
 		this.runId = runId;
 		this.pack = pack;
@@ -78,6 +83,11 @@ public final class CaseRun {
 		return startedBy;
 	}
 
+	/** What was submitted, as submitted. */
+	public String input() {
+		return input;
+	}
+
 	public Instant startedAt() {
 		return startedAt;
 	}
@@ -90,6 +100,7 @@ public final class CaseRun {
 		return pause;
 	}
 
+	/** Why the run failed or was parked; null otherwise. */
 	public synchronized String error() {
 		return error;
 	}
@@ -160,6 +171,13 @@ public final class CaseRun {
 		this.error = error;
 		this.result = result;
 		return add(RunEvent.Type.RUN_FAILED, null, null, error);
+	}
+
+	synchronized RunEvent parked(String reason, Map<String, Object> result) {
+		this.status = Status.PARKED;
+		this.error = reason;
+		this.result = result;
+		return add(RunEvent.Type.RUN_PARKED, null, null, reason);
 	}
 
 	private RunEvent add(RunEvent.Type type, String node, Long ms, String detail) {

@@ -45,7 +45,7 @@ public final class GraphCompiler {
 			StateGraph<CaseState> graph = new StateGraph<>(StateSchemas.from(g.state()), CaseState::new);
 			for (GraphDefinition.NodeSpec node : g.nodes()) {
 				AgentDefinition agent = node.agent() == null ? null : pack.agents().get(node.agent());
-				NodeContext context = new NodeContext(pack.pack(), node, agent, ontology);
+				NodeContext context = new NodeContext(pack.pack(), node, agent, ontology, pack);
 				NodeFactory factory = agent == null ? registry.node(node.type()).orElseThrow()
 						: registry.agent(agent.spec().type()).orElseThrow();
 				graph.addNode(node.id(), node_async(observed(node.id(), factory.create(context))));

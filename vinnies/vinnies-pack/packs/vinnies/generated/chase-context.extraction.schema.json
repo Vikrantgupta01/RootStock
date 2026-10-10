@@ -1,0 +1,37 @@
+{
+  "$schema" : "https://json-schema.org/draft/2020-12/schema",
+  "title" : "Case",
+  "description" : "An assistance case opened after a home visit.",
+  "type" : "object",
+  "additionalProperties" : false,
+  "required" : [ "urgency", "needs" ],
+  "properties" : {
+    "urgency" : {
+      "type" : [ "string", "null" ],
+      "enum" : [ "LOW", "MEDIUM", "HIGH", null ],
+      "description" : "LOW: Help can wait for the next regular visit; MEDIUM: Help is needed within a week; HIGH: Risk to safety or basic needs within 48 hours. Null when the input does not say; never guess."
+    },
+    "needs" : {
+      "type" : "array",
+      "items" : {
+        "$ref" : "#/$defs/Need"
+      }
+    }
+  },
+  "$defs" : {
+    "Need" : {
+      "title" : "Need",
+      "description" : "Something the household needs help with.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "category" ],
+      "properties" : {
+        "category" : {
+          "type" : [ "string", "null" ],
+          "enum" : [ "FOOD", "ENERGY_BILL", "RENT", null ],
+          "description" : "FOOD: Food parcels or supermarket vouchers; ENERGY_BILL: Help with gas or electricity bills, including disconnection notices; RENT: Help with rent arrears or bond. Null when the input does not say; never guess."
+        }
+      }
+    }
+  }
+}

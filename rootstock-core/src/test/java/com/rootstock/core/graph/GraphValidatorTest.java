@@ -38,6 +38,17 @@ class GraphValidatorTest {
 	}
 
 	@Test
+	void anAgentMustNameAConfiguredModelProfile() {
+		GraphValidator.Context base = RepairsPack.context();
+		GraphValidator.Context profiles = new GraphValidator.Context(base.registry(), base.routers(), base.tools(),
+				base.ontology(), null, java.util.Set.of("extraction"));
+
+		assertThat(validator.validate(RepairsPack.load(), profiles)).extracting(GraphProblem::toString).containsExactly(
+				"agents/property-lookup.yaml spec.model: unknown model profile 'fast'; configured (rootstock.llm.profiles): "
+						+ "[extraction]");
+	}
+
+	@Test
 	void anUnknownAgent() {
 		assertThat(problems("graph.yaml", s -> s.replace("agent: job-extractor", "agent: job-reader")))
 				.contains("graph.yaml nodes[1] (extract): unknown agent 'job-reader'; agents/ has [job-extractor, "

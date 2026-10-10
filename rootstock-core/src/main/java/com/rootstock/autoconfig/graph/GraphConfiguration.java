@@ -14,12 +14,18 @@ import com.rootstock.core.graph.NodeFactory;
 import com.rootstock.core.graph.NodeRegistry;
 import com.rootstock.core.graph.PackGraph;
 import com.rootstock.core.graph.PackGraphLoader;
+import com.rootstock.core.graph.nodes.IngestNode;
+import com.rootstock.core.graph.nodes.RulesNode;
+import com.rootstock.core.graph.nodes.StructuredExtraction;
 import com.rootstock.core.graph.stub.StubNodes;
+import com.rootstock.core.llm.LlmService;
+import com.rootstock.core.llm.PromptRegistry;
 import com.rootstock.core.ontology.ResolvedOntology;
 import com.rootstock.core.pack.LoadedPack;
 import com.rootstock.core.pack.PackRegistry;
 import com.rootstock.core.tools.ToolCatalog;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -58,13 +64,28 @@ public class GraphConfiguration {
 	}
 
 	@Bean
+	IngestNode ingestNode() {
+		return new IngestNode();
+	}
+
+	@Bean
+	RulesNode rulesNode() {
+		return new RulesNode();
+	}
+
+	@Bean
+	StructuredExtraction structuredExtraction(LlmService llm, PromptRegistry prompts) {
+		return new StructuredExtraction(llm, prompts, Clock.systemDefaultZone());
+	}
+
+	@Bean
 	RunRegistry runRegistry(ObjectProvider<RunObserver> observers) {
 		return new RunRegistry(observers.orderedStream().toList());
 	}
 
 	@Bean
 	CaseGraphs caseGraphs(PackRegistry packs, NodeRegistry registry, ObjectProvider<CaseRouter> routerBeans,
-			ToolCatalog tools, RunRegistry runs) {
+			ToolCatalog tools, RunRegistry runs, LlmService llm) {
 		List<CaseRouter> routers = routerBeans.orderedStream().toList();
 		GraphCompiler compiler = new GraphCompiler(registry, routers, runs);
 		PackGraphLoader loader = new PackGraphLoader();
@@ -83,7 +104,7 @@ public class GraphConfiguration {
 				case INVALID -> "the pack's ontology.yaml is invalid (" + pack.problems().size() + " problem(s))";
 			};
 			List<GraphProblem> problems = validator.validate(definition, new GraphValidator.Context(registry,
-					new HashSet<>(routers.stream().map(CaseRouter::name).toList()), tools, ontology, missing));
+					new HashSet<>(routers.stream().map(CaseRouter::name).toList()), tools, ontology, missing, llm.profiles()));
 			if (!problems.isEmpty()) {
 				throw new GraphDefinitionException("Pack '" + pack.name() + "' has an invalid graph", problems);
 			}

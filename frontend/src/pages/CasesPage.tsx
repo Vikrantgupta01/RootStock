@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { CaseGraph, CaseRun, RunEvent, Simulate } from '../api/cases'
 import { AppShell } from '../components/AppShell'
 import { useCaseDetail, useCaseGraph, useRecentCases, useRunEvents, useSubmitCase } from '../hooks/useCases'
+import { NotesAndRecord } from './CaseRecord'
 import './KnowledgePage.css'
 import './CasesPage.css'
 
@@ -42,14 +43,15 @@ export function CasesPage() {
     <AppShell wide>
       <div className="page__header">
         <div>
-          <span className="kicker">Graph · stub nodes</span>
+          <span className="kicker">Graph · extraction</span>
           <h1>Cases</h1>
         </div>
       </div>
       <p className="page__lead">
-        Submit visit notes and watch the pack's graph run them, node by node. The nodes are stubs for now: they show
-        the flow, the pauses and the trace, but don't read the notes yet. A run stops where a person is needed: before
-        review, or after clarify asks the member a question.
+        Submit visit notes and watch the pack's graph run them, node by node. Extract is real: a model turns the notes
+        into a case record using the ontology's own categories, and validate asks for any required detail the notes
+        don't give instead of letting anyone guess it. The other nodes are still stubs. A run stops where a person is
+        needed: before review, or after clarify asks the member a question.
       </p>
 
       {graph.isError && <div className="banner banner--error">{graph.error.detail}</div>}
@@ -61,9 +63,9 @@ export function CasesPage() {
             <textarea rows={9} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </label>
           <label>
-            Simulate (stubs only)
+            Also simulate (until the pack's rules exist)
             <select value={simulate} onChange={(e) => setSimulate(e.target.value as Simulate)}>
-              <option value="none">Nothing missing: draft, then review</option>
+              <option value="none">Nothing extra</option>
               <option value="clarify">A detail the member can give: clarify</option>
               <option value="chase">A detail only the household can give: chase</option>
             </select>
@@ -105,6 +107,7 @@ export function CasesPage() {
             <span className="muted cases__id">case {selected}</span>
           </div>
           {streamError && <div className="banner banner--error">{streamError}</div>}
+          {detail.data && detail.data.status !== 'RUNNING' && <NotesAndRecord run={detail.data} />}
           <EventLog events={events} />
           {detail.data?.result && detail.data.status !== 'RUNNING' && <Result run={detail.data} />}
         </section>
@@ -114,7 +117,13 @@ export function CasesPage() {
 }
 
 function StatusBadge({ run }: { run: CaseRun }) {
-  const cls = { RUNNING: 'badge--busy', PAUSED: 'badge--muted', COMPLETED: 'badge--ok', FAILED: 'badge--error' }[run.status]
+  const cls = {
+    RUNNING: 'badge--busy',
+    PAUSED: 'badge--muted',
+    COMPLETED: 'badge--ok',
+    FAILED: 'badge--error',
+    PARKED: 'badge--busy',
+  }[run.status]
   const text =
     run.status === 'PAUSED' && run.pause
       ? `paused ${run.pause.before ? 'before' : 'after'} ${run.pause.node}`
@@ -180,7 +189,12 @@ function Result({ run }: { run: CaseRun }) {
   const list = (key: string) => (Array.isArray(result[key]) ? (result[key] as Record<string, unknown>[]) : [])
   return (
     <div className="cases__result">
-      {run.error && <div className="banner banner--error">{run.error}</div>}
+      {run.error && (
+        <div className={`banner ${run.status === 'PARKED' ? 'banner--busy' : 'banner--error'}`}>
+          {run.status === 'PARKED' ? 'Parked for a person: ' : ''}
+          {run.error}
+        </div>
+      )}
       <section>
         <h3>Issues</h3>
         {list('issues').length === 0 ? <p className="muted">None.</p> : (
@@ -190,12 +204,10 @@ function Result({ run }: { run: CaseRun }) {
         {list('actions').length === 0 ? <p className="muted">None.</p> : (
           <ul>{list('actions').map((a, n) => <li key={n}><code>{String(a.type)}</code> {String(a.summary)}</li>)}</ul>
         )}
-        <h3>Audit</h3>
-        <ul>{list('audit').map((a, n) => <li key={n}><strong>{String(a.node)}</strong>: {String(a.note)}</li>)}</ul>
       </section>
       <section>
-        <h3>Record</h3>
-        <pre className="cases__pre">{JSON.stringify(result.record ?? null, null, 2)}</pre>
+        <h3>Audit</h3>
+        <ul>{list('audit').map((a, n) => <li key={n}><strong>{String(a.node)}</strong>: {String(a.note)}</li>)}</ul>
       </section>
     </div>
   )

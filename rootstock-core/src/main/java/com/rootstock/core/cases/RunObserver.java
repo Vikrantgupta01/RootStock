@@ -17,6 +17,6 @@ public interface RunObserver {
 
 	void nodeFailed(CaseRun run, String node, Throwable failure);
 
-	/** The run paused, completed or failed; see its status. */
+	/** The run paused, completed, failed or was parked; see its status. */
 	void runEnded(CaseRun run);
 }

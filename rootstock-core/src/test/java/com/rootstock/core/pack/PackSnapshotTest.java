@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
  * Snapshot test for the domain packs Rootstock is configured with
  * ({@code ROOTSTOCK_PACKS_PATHS}, loaded from {@code .env}): every pack's
  * ontology must be valid, and its committed {@code generated/} schema and
- * glossary for each projection must match what Rootstock generates now. Skipped
+ * schemas (strict and extraction mode) and glossary for each projection must match what Rootstock generates now. Skipped
  * when no packs are configured. After an intended ontology change, rewrite
  * them with {@code mvn test -Dtest=PackSnapshotTest -Dsnapshot.update=true}.
  */
@@ -51,6 +51,8 @@ class PackSnapshotTest {
 			for (String projection : pack.ontology().projections().keySet()) {
 				Snapshots.assertMatches(generated.resolve(projection + ".schema.json"),
 						new JsonSchemaGenerator().generateJson(ontology, projection));
+				Snapshots.assertMatches(generated.resolve(projection + ".extraction.schema.json"),
+						new JsonSchemaGenerator().generateJson(ontology, projection, JsonSchemaGenerator.Mode.EXTRACTION));
 				Snapshots.assertMatches(generated.resolve(projection + ".glossary.txt"),
 						new GlossaryRenderer().render(ontology, projection));
 			}

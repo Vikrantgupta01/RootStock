@@ -77,10 +77,18 @@ covers all three layers; it is the only class outside them.
 - `graph.yaml` and `agents/` are checked against the JSON Schemas in
   `src/main/resources/schemas/`; change a schema and the loader together.
 - Node and agent types are Rootstock building blocks (`NodeFactory`); YAML only combines
-  them. They are stubs (`core.graph.stub.StubNodes`) until each gets a real implementation,
-  registered as a `NodeFactory` bean of the same type. Routing conditions are a fixed set
-  with no expressions; anything more is a named `CaseRouter` bean.
+  them. They are stubs (`core.graph.stub.StubNodes`) until each gets a real implementation
+  (`core.graph.nodes`), registered as a `NodeFactory` bean of the same type. Routing
+  conditions are a fixed set with no expressions; anything more is a named `CaseRouter` bean.
 - Everything a node writes into state must be `Serializable` (the checkpointer copies it).
+- Case agents call models only through `LlmService`, by **model profile**
+  (`rootstock.llm.profiles`), never by model id. Prompts come from Langfuse through
+  `PromptRegistry`; a pack keeps a fallback copy of each in `prompts/`, in Langfuse's
+  create-prompt shape. Publishing a prompt to Langfuse is a write: ask first.
+- A model never invents a value: extraction uses the projection's EXTRACTION-mode schema
+  (null allowed), and validate turns a missing required field into a question
+  (`RequiredFields`). Model output that never matches its schema parks the case
+  (`CaseParkedException`); it is not an error.
 
 ## Not yet compliant
 

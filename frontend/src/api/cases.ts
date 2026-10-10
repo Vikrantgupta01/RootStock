@@ -2,7 +2,8 @@
 
 import { request, streamEvents } from './http'
 
-export type RunStatus = 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'FAILED'
+/** PARKED: stopped for a person to look at, e.g. model output that never matched its schema. */
+export type RunStatus = 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'PARKED'
 export type RunEventType =
   | 'RUN_STARTED'
   | 'NODE_STARTED'
@@ -11,6 +12,7 @@ export type RunEventType =
   | 'RUN_PAUSED'
   | 'RUN_COMPLETED'
   | 'RUN_FAILED'
+  | 'RUN_PARKED'
 export type Simulate = 'none' | 'clarify' | 'chase'
 
 export interface RunEvent {
@@ -32,10 +34,13 @@ export interface CaseRun {
   status: RunStatus
   /** Where a paused run stopped: before the node (e.g. review) or after it (e.g. clarify). */
   pause: { node: string; before: boolean } | null
+  /** Why the run failed or was parked. */
   error: string | null
   startedAt: string
   /** The run's Langfuse trace; null when tracing is off. */
   traceUrl: string | null
+  /** Only in a single case's detail: what was submitted, as submitted. */
+  input: string | null
   /** Only in a single case's detail. */
   events: RunEvent[] | null
   result: Record<string, unknown> | null
@@ -71,7 +76,7 @@ export interface SubmitCase {
   simulate: Simulate
 }
 
-const RUN_ENDS: RunEventType[] = ['RUN_PAUSED', 'RUN_COMPLETED', 'RUN_FAILED']
+const RUN_ENDS: RunEventType[] = ['RUN_PAUSED', 'RUN_COMPLETED', 'RUN_FAILED', 'RUN_PARKED']
 
 export const isRunEnd = (event: RunEvent) => RUN_ENDS.includes(event.type)
 

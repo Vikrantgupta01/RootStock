@@ -84,23 +84,33 @@ public final class StubNodes {
 	}
 
 	private static Map<String, Object> rules(NodeContext ctx, CaseState state) {
+		Simulated simulated = simulated(state);
+		// Always the whole list: each validation pass replaces the last one's issues.
+		Map<String, Object> update = audit(ctx, simulated == null ? "Stub: no rules run yet; no issues" : simulated.note());
+		update.put("issues", simulated == null ? List.of() : simulated.issues());
+		return update;
+	}
+
+	/** An issue raised on request ({@code simulate}), with a note for the audit. */
+	public record Simulated(List<CaseIssue> issues, String note) {
+	}
+
+	/**
+	 * The issue the {@code simulate} run option asks for, if any. The real rules
+	 * node uses it too, until rules of its own drive every route (Iteration 8).
+	 */
+	public static Simulated simulated(CaseState state) {
 		Object simulate = state.options().get(SIMULATE);
 		if ("clarify".equals(simulate) && state.clarifyRounds() == 0) {
-			Map<String, Object> update = audit(ctx, "Stub: simulated a missing detail the submitter can give");
-			update.put("issues", List.of(new CaseIssue("STUB-missing-detail", CaseIssue.BLOCKING, CaseIssue.SUBMITTER,
-					"Simulated: the visit date is missing")));
-			return update;
+			return new Simulated(List.of(new CaseIssue("STUB-missing-detail", CaseIssue.BLOCKING, CaseIssue.SUBMITTER,
+					"Simulated: the visit date is missing")), "Stub: simulated a missing detail the submitter can give");
 		}
 		if ("chase".equals(simulate)) {
-			Map<String, Object> update = audit(ctx, "Stub: simulated a detail only the household can give");
-			update.put("issues", List.of(new CaseIssue("STUB-needs-household", CaseIssue.BLOCKING, CaseIssue.EXTERNAL,
-					"Simulated: the household's consent is not recorded")));
-			return update;
+			return new Simulated(List.of(new CaseIssue("STUB-needs-household", CaseIssue.BLOCKING, CaseIssue.EXTERNAL,
+					"Simulated: the household's consent is not recorded")),
+					"Stub: simulated a detail only the household can give");
 		}
-		// Always the whole list: each validation pass replaces the last one's issues.
-		Map<String, Object> update = audit(ctx, "Stub: no rules run yet; no issues");
-		update.put("issues", List.of());
-		return update;
+		return null;
 	}
 
 	private static Map<String, Object> clarify(NodeContext ctx, CaseState state) {
@@ -120,9 +130,7 @@ public final class StubNodes {
 	}
 
 	private static Map<String, Object> audit(NodeContext ctx, String note) {
-		Map<String, Object> update = new LinkedHashMap<>();
-		update.put("audit", List.of(new AuditEntry(ctx.node().id(), note)));
-		return update;
+		return AuditEntry.update(ctx.node().id(), note);
 	}
 
 	private static NodeFactory node(String type, Duration pause, BiFunction<NodeContext, CaseState, Map<String, Object>> work) {
