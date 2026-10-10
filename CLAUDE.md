@@ -92,6 +92,10 @@ covers all three layers; it is the only class outside them.
 - A tool-calling agent's tools go through the `ToolGateway` as its graph node. The model is
   offered only the agent's `tools.allow` (checked against the node's allowlist at startup);
   fixed lookups belong in the agent's `plan`, not in the prompt.
+- A pack's business rules are YAML (`rules.yaml`) configuring Rootstock rule kinds
+  (`core.rules`), never pack code; a check no kind can express is a new `RuleKind` bean.
+  Thresholds come from the client system's lookups with YAML defaults. A model's
+  judgement (the `judge` agent) is only ever a WARNING.
 
 ## Not yet compliant
 

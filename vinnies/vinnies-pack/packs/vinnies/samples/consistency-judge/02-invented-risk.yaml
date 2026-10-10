@@ -1,0 +1,12 @@
+input: |
+  Visit 8 Oct 2026, Penrith. Couple, no kids. Gas bill of $380 due in 10 days,
+  can't cover it this fortnight. Both well, nothing else raised.
+record:
+  urgency: HIGH
+  riskFlags: [SAFETY]
+  visitDate: "2026-10-08"
+  household: { suburb: Penrith, adults: 2, children: 0 }
+  needs:
+    - { category: ENERGY_BILL, details: Gas bill of $380 due in 10 days. }
+expect:
+  flagged: [riskFlags]

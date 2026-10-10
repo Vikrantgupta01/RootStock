@@ -1,0 +1,8 @@
+# Catherine Smith, Parramatta (HH-0003). Rent limit per visit: $600.
+input: |
+  Visit 9 Oct 2026, Parramatta. Catherine Smith and her daughter.
+  Two weeks behind on rent after reduced hours. We paid $800 to the agent today.
+  Catherine agreed to us sharing her details for referrals.
+expect:
+  issues: [R02-amount-limit]
+  pausedAt: review

@@ -1,6 +1,7 @@
 package com.rootstock.core.graph;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -43,9 +44,12 @@ class GraphValidatorTest {
 		GraphValidator.Context profiles = new GraphValidator.Context(base.registry(), base.routers(), base.tools(),
 				base.ontology(), null, java.util.Set.of("extraction"));
 
-		assertThat(validator.validate(RepairsPack.load(), profiles)).extracting(GraphProblem::toString).containsExactly(
-				"agents/property-lookup.yaml spec.model: unknown model profile 'fast'; configured (rootstock.llm.profiles): "
-						+ "[extraction]");
+		assertThat(validator.validate(RepairsPack.load(), profiles)).extracting(GraphProblem::toString)
+				.containsExactlyInAnyOrder(
+						"agents/job-judge.yaml spec.model: unknown model profile 'fast'; configured (rootstock.llm.profiles): "
+								+ "[extraction]",
+						"agents/property-lookup.yaml spec.model: unknown model profile 'fast'; configured "
+								+ "(rootstock.llm.profiles): [extraction]");
 	}
 
 	@Test
@@ -59,6 +63,22 @@ class GraphValidatorTest {
 						"agents/property-lookup.yaml spec.plan[0]: '$.jobs.id' reads unknown state channel 'jobs'; known: "
 								+ "[actions, audit, caseId, clarifyRounds, context, issues, options, pack, questions, rawInput, "
 								+ "record, review, runId, traceId]");
+	}
+
+	@Test
+	void aBrokenRuleStopsStartupWithWhatIsWrong() {
+		assertThat(problems("rules.yaml", s -> s.replace("kind: frequency", "kind: often")
+				.replace("    amount: estimateAud\n", ""))).containsExactlyInAnyOrder(
+						"rules.yaml rules: rule 'estimate-limit' (limit) needs 'amount'",
+						"rules.yaml rules: rule 'repeat-job': unknown kind 'often'; known: [frequency, limit, requires]");
+	}
+
+	@Test
+	void aRuleFileThatDoesNotMatchItsSchemaSaysWhere() {
+		assertThatThrownBy(() -> problems("rules.yaml", s -> s.replace("severity: BLOCKING", "severity: FATAL")))
+				.isInstanceOf(GraphDefinitionException.class)
+				.satisfies(e -> assertThat(((GraphDefinitionException) e).problems()).extracting(GraphProblem::toString)
+						.singleElement().asString().startsWith("rules.yaml rules[2].severity:"));
 	}
 
 	@Test

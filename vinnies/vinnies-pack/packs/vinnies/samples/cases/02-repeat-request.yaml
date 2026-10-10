@@ -1,0 +1,8 @@
+# Linh Tran, Blacktown (HH-0001): energy help 21 and 75 days ago; window 90 days.
+input: |
+  Visit 10 Oct 2026, Blacktown. Linh Tran, partner and 2 kids.
+  Another electricity bill, $350, due next week. They can't cover it this time either.
+  Happy for us to share details.
+expect:
+  issues: [R03-frequency]
+  pausedAt: review

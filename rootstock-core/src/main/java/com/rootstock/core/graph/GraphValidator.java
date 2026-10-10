@@ -4,6 +4,9 @@ import com.rootstock.core.ontology.ResolvedOntology;
 import com.rootstock.core.tools.ToolAccess;
 import com.rootstock.core.tools.ToolCatalog;
 import com.rootstock.core.tools.ToolDefinition;
+import com.rootstock.core.rules.RuleEngine;
+import com.rootstock.core.rules.RuleKind;
+import com.rootstock.core.rules.RuleKinds;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -48,13 +51,23 @@ public final class GraphValidator {
 	 */
 	/**
 	 * @param modelProfiles the configured model profiles an agent's {@code model} may name; null to not check
+	 * @param ruleKinds     the rule kinds rules.yaml may use, by name; null for the built-in ones
 	 */
 	public record Context(NodeRegistry registry, Set<String> routers, ToolCatalog tools, ResolvedOntology ontology,
-			String ontologyMissing, Set<String> modelProfiles) {
+			String ontologyMissing, Set<String> modelProfiles, Map<String, RuleKind> ruleKinds) {
+
+		public Context {
+			ruleKinds = ruleKinds == null ? RuleKinds.of(List.of()) : ruleKinds;
+		}
+
+		public Context(NodeRegistry registry, Set<String> routers, ToolCatalog tools, ResolvedOntology ontology,
+				String ontologyMissing, Set<String> modelProfiles) {
+			this(registry, routers, tools, ontology, ontologyMissing, modelProfiles, null);
+		}
 
 		public Context(NodeRegistry registry, Set<String> routers, ToolCatalog tools, ResolvedOntology ontology,
 				String ontologyMissing) {
-			this(registry, routers, tools, ontology, ontologyMissing, null);
+			this(registry, routers, tools, ontology, ontologyMissing, null, null);
 		}
 	}
 
@@ -97,6 +110,9 @@ public final class GraphValidator {
 		Set<String> lists = lists(g);
 		Set<String> objects = objects(g);
 		agents(pack, context, channels, problems);
+		// Rules decide routing (a BLOCKING issue sends the case back), so a broken one stops startup.
+		RuleEngine.problems(pack.rules(), context.ruleKinds())
+				.forEach(p -> problems.add(new GraphProblem(PackGraphLoader.RULES_FILE, "rules", p)));
 		Map<String, List<String>> next = edges(g, ids, channels, lists, objects, context, problems);
 		reachability(g, ids, next, problems);
 		runtime(g, ids, problems);

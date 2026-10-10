@@ -3,6 +3,7 @@ import type { CaseGraph, CaseRun, RunEvent, Simulate } from '../api/cases'
 import { AppShell } from '../components/AppShell'
 import { useCaseDetail, useCaseGraph, useRecentCases, useRunEvents, useSubmitCase } from '../hooks/useCases'
 import { CaseContext } from './CaseContext'
+import { CaseIssues } from './CaseIssues'
 import { NotesAndRecord } from './CaseRecord'
 import './KnowledgePage.css'
 import './CasesPage.css'
@@ -50,11 +51,12 @@ export function CasesPage() {
         </div>
       </div>
       <p className="page__lead">
-        Submit visit notes and watch the pack's graph run them, node by node. Extract is real: a model turns the notes
-        into a case record using the ontology's own categories, and validate asks for any required detail the notes
-        don't give instead of letting anyone guess it. Enrich looks the household, its history, the guidelines and
-        local services up in the client system, only through the tools its node is allowed. The other nodes are
-        still stubs. A run stops where a person is
+        Submit visit notes and watch the pack's graph run them, node by node. Extract turns the notes into a case
+        record in the ontology's own categories; enrich looks the household, its history, the guidelines and local
+        services up in the client system; validate checks the record in four layers (its shape, the ontology's
+        constraints, the pack's rules with the client's own limits, and a judge comparing it with the notes). A
+        blocking issue goes back to the member or the household; warnings go to the coordinator. The later nodes
+        are still stubs. A run stops where a person is
         needed: before review, or after clarify asks the member a question.
       </p>
 
@@ -113,6 +115,7 @@ export function CasesPage() {
           {streamError && <div className="banner banner--error">{streamError}</div>}
           {detail.data && detail.data.status !== 'RUNNING' && (
             <>
+              <CaseIssues run={detail.data} />
               <NotesAndRecord run={detail.data} />
               <CaseContext run={detail.data} />
             </>
@@ -205,10 +208,6 @@ function Result({ run }: { run: CaseRun }) {
         </div>
       )}
       <section>
-        <h3>Issues</h3>
-        {list('issues').length === 0 ? <p className="muted">None.</p> : (
-          <ul>{list('issues').map((i, n) => <li key={n}><code>{String(i.severity)}</code> {String(i.message)} <span className="muted">({String(i.answerableBy)})</span></li>)}</ul>
-        )}
         <h3>Proposed actions</h3>
         {list('actions').length === 0 ? <p className="muted">None.</p> : (
           <ul>{list('actions').map((a, n) => <li key={n}><code>{String(a.type)}</code> {String(a.summary)}</li>)}</ul>

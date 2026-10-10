@@ -1,4 +1,9 @@
 apiVersion: rootstock/v1
 kind: Agent
 metadata: { name: job-judge }
-spec: { type: judge, input: { report: $.rawInput }, output: { writeTo: issues } }
+spec:
+  type: judge
+  model: fast
+  prompt: { name: repairs/judge }
+  input: { report: $.rawInput, record: $.record }
+  output: { writeTo: issues }

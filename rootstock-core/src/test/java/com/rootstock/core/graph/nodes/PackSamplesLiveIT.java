@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.rootstock.core.cases.CaseGraphs;
 import com.rootstock.core.graph.AgentDefinition;
 import com.rootstock.core.graph.CaseGraph;
+import com.rootstock.core.graph.CaseIssue;
 import com.rootstock.core.graph.CaseState;
+import com.rootstock.core.graph.Lookup;
 import com.rootstock.core.graph.GraphDefinition;
 import com.rootstock.core.graph.NodeContext;
 import com.rootstock.core.graph.NodeRegistry;
@@ -52,6 +54,10 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  * {@code notOk} (tools without one) and {@code arguments} ({@code tool.argument}
  * to the value or values its successful lookups used). It needs the client
  * system running.
+ *
+ * <p>A judge sample has {@code input} and {@code record}, and {@code expect}:
+ * {@code flagged} (record paths it must report: an issue whose path starts with
+ * each) or {@code clean: true} (it must report nothing).
  */
 @Tag("live")
 @SpringBootTest
@@ -75,9 +81,16 @@ class PackSamplesLiveIT {
 			LoadedPack pack = packs.snapshot().packs().stream().filter(p -> p.name().equals(graph.pack())).findFirst()
 					.orElseThrow();
 			ResolvedOntology ontology = packs.ontology(pack.name()).orElseThrow();
-			for (GraphDefinition.NodeSpec node : definition.graph().nodes()) {
-				AgentDefinition agent = node.agent() == null ? null : definition.agents().get(node.agent());
-				if (agent == null || !List.of(StructuredExtraction.TYPE, ToolCallingAgent.TYPE).contains(agent.spec().type())) {
+			for (AgentDefinition agent : definition.agents().values()) {
+				if (!List.of(StructuredExtraction.TYPE, ToolCallingAgent.TYPE, JudgeAgent.TYPE)
+						.contains(agent.spec().type())) {
+					continue;
+				}
+				// The node that runs it: its own, or one whose config names it (a judge, for validate).
+				GraphDefinition.NodeSpec node = definition.graph().nodes().stream()
+						.filter(n -> agent.name().equals(n.agent()) || n.config().containsValue(agent.name()))
+						.findFirst().orElse(null);
+				if (node == null) {
 					continue;
 				}
 				Path samples = Path.of(pack.location(), "samples", agent.name());
@@ -91,6 +104,9 @@ class PackSamplesLiveIT {
 								() -> {
 									if (agent.spec().type().equals(ToolCallingAgent.TYPE)) {
 										checkLookups(context, file);
+									}
+									else if (agent.spec().type().equals(JudgeAgent.TYPE)) {
+										checkJudge(context, file);
 									}
 									else {
 										check(context, ontology, file);
@@ -138,9 +154,9 @@ class PackSamplesLiveIT {
 				.apply(new CaseState(Map.of(CaseState.CASE_ID, "sample", CaseState.RAW_INPUT, sample.get("input"),
 						"record", sample.get("record"))));
 		Map<String, Object> output = (Map<String, Object>) update.get(context.agent().spec().output().writeTo());
-		List<ToolCallingAgent.Lookup> lookups = (List<ToolCallingAgent.Lookup>) output.get("lookups");
-		List<ToolCallingAgent.Lookup> ok = lookups.stream().filter(l -> l.status().equals("OK")).toList();
-		Set<String> okTools = ok.stream().map(ToolCallingAgent.Lookup::tool).collect(Collectors.toSet());
+		List<Lookup> lookups = (List<Lookup>) output.get("lookups");
+		List<Lookup> ok = lookups.stream().filter(l -> l.status().equals("OK")).toList();
+		Set<String> okTools = ok.stream().map(Lookup::tool).collect(Collectors.toSet());
 		Map<String, Object> expect = (Map<String, Object>) sample.getOrDefault("expect", Map.of());
 
 		List<String> wrong = new ArrayList<>();
@@ -162,6 +178,28 @@ class PackSamplesLiveIT {
 				.map(l -> l.source() + " " + l.tool() + " " + l.arguments() + " " + l.status()
 						+ (l.message() == null ? "" : " (" + l.message() + ")"))
 				.toList()).isEmpty();
+	}
+
+	@SuppressWarnings("unchecked")
+	private void checkJudge(NodeContext context, Path file) throws Exception {
+		Map<String, Object> sample = new Yaml(new SafeConstructor(new LoaderOptions())).load(Files.readString(file));
+		Map<String, Object> update = registry.agent(JudgeAgent.TYPE).orElseThrow().create(context)
+				.apply(new CaseState(Map.of(CaseState.CASE_ID, "sample", CaseState.RAW_INPUT, sample.get("input"),
+						"record", sample.get("record"))));
+		List<CaseIssue> issues = (List<CaseIssue>) update.get(context.agent().spec().output().writeTo());
+		Map<String, Object> expect = (Map<String, Object>) sample.getOrDefault("expect", Map.of());
+
+		List<String> wrong = new ArrayList<>();
+		if (Boolean.TRUE.equals(expect.get("clean")) && !issues.isEmpty()) {
+			wrong.add("expected nothing flagged");
+		}
+		for (String path : (List<String>) expect.getOrDefault("flagged", List.of())) {
+			if (issues.stream().noneMatch(i -> i.path() != null && i.path().startsWith(path))) {
+				wrong.add("nothing flagged at " + path);
+			}
+		}
+		assertThat(wrong).as("%s\nissues: %s", file.getFileName(), issues.stream()
+				.map(i -> i.path() + ": " + i.message()).toList()).isEmpty();
 	}
 
 	/** Every non-null value at {@code path}, going through lists. */

@@ -1,0 +1,7 @@
+name: repairs/judge
+type: chat
+prompt:
+  - role: system
+    content: "Compare the job with the report. Reply as {{schema}}"
+  - role: user
+    content: "Report: {{report}} Job: {{record}}"

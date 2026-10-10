@@ -1,0 +1,58 @@
+# Vinnies' business rules, checked by validate after enrich. Each is a Rootstock
+# rule kind (limit, frequency, requires) configured here; Rootstock checks this
+# file at startup and refuses to start if a rule is broken.
+#
+# Thresholds come from Vinnies' own system (get_assistance_guidelines, looked up
+# by enrich), so Vinnies staff can change a limit or window without a pack
+# release; the defaults below are only used when that lookup is missing.
+#
+# Two rules from the design are not here because the ontology already says them:
+# - R01 (household, visit date, at least one need): the ontology's required
+#   fields, checked by the structural layer.
+# - R04 (risk flags need HIGH urgency): the ontology constraint
+#   urgent-needs-follow-up, checked by the semantic layer.
+apiVersion: rootstock/v1
+kind: Rules
+rules:
+  - id: R02-amount-limit
+    kind: limit
+    severity: WARNING
+    description: Assistance of each type stays within the guideline's limit per visit.
+    forEach: $.record.assistance
+    amount: amountAud
+    limit:
+      lookup: get_assistance_guidelines
+      match: { assistanceType: $item.category }
+      field: limitPerVisitAud
+      default: { FOOD: 150, ENERGY_BILL: 400, RENT: 600 }
+    message: "{item.category} assistance of ${amount} is over the ${limit} limit per visit; a coordinator must approve it"
+
+  - id: R03-frequency
+    kind: frequency
+    severity: WARNING
+    description: The same type of help for the household inside the guideline's repeat window is a repeat request.
+    forEach: $.record.needs
+    key: category
+    history: { lookup: get_assistance_history, list: assistance, key: type, date: date }
+    window:
+      lookup: get_assistance_guidelines
+      match: { assistanceType: $item.category }
+      field: repeatWindowDays
+      default: { FOOD: 14, ENERGY_BILL: 90, RENT: 180 }
+    since: $.record.visitDate
+    message: "Repeat request: {key} help was given on {date}, inside the {window}-day repeat window; the guideline asks for coordinator approval"
+
+  - id: R05-new-household
+    kind: requires
+    severity: BLOCKING
+    # Contact details and consent come from the household itself: chase them.
+    answerableBy: EXTERNAL
+    description: A household new to Vinnies needs contact details and consent recorded.
+    when:
+      # Looked for and not matched: enrich fetches history only for a household it matched.
+      succeeded: [find_household]
+      notSucceeded: [get_assistance_history]
+    require:
+      $.record.household.contact: present
+      $.record.household.consentGiven: true
+    message: "New household: {field} must be recorded (expected {expected})"

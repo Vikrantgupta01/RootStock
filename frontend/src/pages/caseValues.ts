@@ -24,3 +24,21 @@ export function useDefinitions(pack: string) {
   }
   return definitions
 }
+
+/** An issue as the run's result holds it (a core.Issue). */
+export interface CaseIssueView {
+  ruleId: string
+  severity: 'BLOCKING' | 'WARNING'
+  answerableBy: 'SUBMITTER' | 'EXTERNAL' | 'REVIEWER'
+  message: string
+  /** The record field it is about; null for the whole case. */
+  path: string | null
+  layer: 'STRUCTURAL' | 'SEMANTIC' | 'BUSINESS' | 'JUDGMENT' | null
+}
+
+export function caseIssues(result: Record<string, unknown> | null): CaseIssueView[] {
+  return Array.isArray(result?.issues) ? (result.issues as CaseIssueView[]) : []
+}
+
+/** The ids validate gives a required field the input did not have. */
+export const REQUIRED_FIELD = 'required-field'

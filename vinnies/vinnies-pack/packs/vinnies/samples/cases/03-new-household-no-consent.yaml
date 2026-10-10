@@ -1,0 +1,7 @@
+# Not in the Vinnies demo data: a new household.
+input: |
+  Visit 8 Oct 2026, Penrith. Met Bartholomew Quill, lives alone, new to the area.
+  Behind on rent by three weeks. Didn't get a phone number or ask about sharing details.
+expect:
+  issues: [R05-new-household]
+  pausedAt: review

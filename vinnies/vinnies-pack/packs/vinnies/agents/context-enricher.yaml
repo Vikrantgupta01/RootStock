@@ -1,4 +1,4 @@
-  apiVersion: rootstock/v1
+apiVersion: rootstock/v1
 kind: Agent
 metadata:
   name: context-enricher

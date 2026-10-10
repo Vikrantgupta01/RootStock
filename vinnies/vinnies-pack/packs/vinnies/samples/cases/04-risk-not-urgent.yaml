@@ -1,0 +1,8 @@
+# The notes describe a disconnection risk but call it not urgent.
+input: |
+  Visit 7 Oct 2026, Blacktown. Linh Tran at home.
+  Has a disconnection notice from the gas company, but she says it can wait until our next regular visit, no rush at all.
+  Happy for us to share details.
+expect:
+  issues: [urgent-needs-follow-up]
+  pausedAt: clarify

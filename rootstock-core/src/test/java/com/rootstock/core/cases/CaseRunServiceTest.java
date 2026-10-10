@@ -232,9 +232,12 @@ class CaseRunServiceTest {
 		assertThat(nodesRun(run)).containsExactly("ingest", "extract", "enrich", "validate", "clarify");
 		assertThat(run.result().get("record")).asInstanceOf(InstanceOfAssertFactories.MAP)
 				.containsEntry("reportedOn", null);
-		assertThat(run.result().get("issues")).asInstanceOf(InstanceOfAssertFactories.LIST).singleElement()
-				.isEqualTo(new CaseIssue(RulesNode.REQUIRED_FIELD, CaseIssue.BLOCKING, CaseIssue.SUBMITTER,
-						"Missing reportedOn", "reportedOn"));
+		// The repairs pack's own rule also asks for the urgent job's phone number.
+		assertThat(run.result().get("issues")).asInstanceOf(InstanceOfAssertFactories.LIST).containsExactly(
+				new CaseIssue(RulesNode.REQUIRED_FIELD, CaseIssue.BLOCKING, CaseIssue.SUBMITTER, "Missing reportedOn",
+						"reportedOn", CaseIssue.STRUCTURAL),
+				new CaseIssue("urgent-needs-phone", CaseIssue.BLOCKING, CaseIssue.SUBMITTER,
+						"tenant.phone is required here", "tenant.phone", CaseIssue.BUSINESS));
 		assertThat(run.input()).isEqualTo("Water everywhere in the kitchen");
 	}
 

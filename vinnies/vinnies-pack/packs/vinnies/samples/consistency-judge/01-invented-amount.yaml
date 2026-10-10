@@ -1,0 +1,14 @@
+input: |
+  Visit 6 Oct 2026, Blacktown. Linh Tran, partner and 2 kids.
+  Fridge nearly empty. Gave an $80 Coles voucher.
+record:
+  urgency: MEDIUM
+  riskFlags: []
+  visitDate: "2026-10-06"
+  household: { suburb: Blacktown, adults: 2, children: 2 }
+  needs:
+    - { category: FOOD, details: Fridge nearly empty. }
+  assistance:
+    - { category: FOOD, amountAud: 300 }
+expect:
+  flagged: [assistance]

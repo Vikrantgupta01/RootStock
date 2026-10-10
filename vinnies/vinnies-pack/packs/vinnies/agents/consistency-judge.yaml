@@ -5,8 +5,10 @@ metadata:
   description: Checks the record against the original notes; flags anything invented or missed.
 spec:
   type: judge
-  model: extraction
+  # A cheaper, faster model is enough for a yes/no comparison; its findings are
+  # warnings for the coordinator, never blocking.
+  model: fast
   prompt: { name: vinnies/judge, label: production }
   input:  { notes: $.rawInput, record: $.record }
   output: { writeTo: issues }
-  limits: { timeoutSeconds: 30 }
+  limits: { timeoutSeconds: 45, retries: 1 }

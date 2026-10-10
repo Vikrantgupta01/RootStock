@@ -15,6 +15,7 @@ import com.rootstock.core.graph.NodeRegistry;
 import com.rootstock.core.graph.PackGraph;
 import com.rootstock.core.graph.PackGraphLoader;
 import com.rootstock.core.graph.nodes.IngestNode;
+import com.rootstock.core.graph.nodes.JudgeAgent;
 import com.rootstock.core.graph.nodes.RulesNode;
 import com.rootstock.core.graph.nodes.StructuredExtraction;
 import com.rootstock.core.graph.nodes.ToolCallingAgent;
@@ -24,6 +25,8 @@ import com.rootstock.core.llm.PromptRegistry;
 import com.rootstock.core.ontology.ResolvedOntology;
 import com.rootstock.core.pack.LoadedPack;
 import com.rootstock.core.pack.PackRegistry;
+import com.rootstock.core.rules.RuleKind;
+import com.rootstock.core.rules.RuleKinds;
 import com.rootstock.core.tools.ToolCatalog;
 import com.rootstock.core.tools.ToolGateway;
 import java.nio.file.Path;
@@ -71,8 +74,19 @@ public class GraphConfiguration {
 	}
 
 	@Bean
-	RulesNode rulesNode() {
-		return new RulesNode();
+	Map<String, RuleKind> ruleKinds(ObjectProvider<RuleKind> added) {
+		return RuleKinds.of(added.orderedStream().toList());
+	}
+
+	/** Finds the judge's factory through the registry, which is only built once every factory exists. */
+	@Bean
+	RulesNode rulesNode(Map<String, RuleKind> ruleKinds, ObjectProvider<NodeRegistry> registry) {
+		return new RulesNode(ruleKinds, type -> registry.getObject().agent(type), Clock.systemDefaultZone());
+	}
+
+	@Bean
+	JudgeAgent judgeAgent(LlmService llm, PromptRegistry prompts) {
+		return new JudgeAgent(llm, prompts, Clock.systemDefaultZone());
 	}
 
 	@Bean
@@ -92,7 +106,7 @@ public class GraphConfiguration {
 
 	@Bean
 	CaseGraphs caseGraphs(PackRegistry packs, NodeRegistry registry, ObjectProvider<CaseRouter> routerBeans,
-			ToolCatalog tools, RunRegistry runs, LlmService llm) {
+			ToolCatalog tools, RunRegistry runs, LlmService llm, Map<String, RuleKind> ruleKinds) {
 		List<CaseRouter> routers = routerBeans.orderedStream().toList();
 		GraphCompiler compiler = new GraphCompiler(registry, routers, runs);
 		PackGraphLoader loader = new PackGraphLoader();
@@ -111,7 +125,7 @@ public class GraphConfiguration {
 				case INVALID -> "the pack's ontology.yaml is invalid (" + pack.problems().size() + " problem(s))";
 			};
 			List<GraphProblem> problems = validator.validate(definition, new GraphValidator.Context(registry,
-					new HashSet<>(routers.stream().map(CaseRouter::name).toList()), tools, ontology, missing, llm.profiles()));
+					new HashSet<>(routers.stream().map(CaseRouter::name).toList()), tools, ontology, missing, llm.profiles(), ruleKinds));
 			if (!problems.isEmpty()) {
 				throw new GraphDefinitionException("Pack '" + pack.name() + "' has an invalid graph", problems);
 			}

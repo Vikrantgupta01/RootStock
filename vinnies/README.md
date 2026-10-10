@@ -22,21 +22,28 @@ The Vinnies demo domain for Sinew Rootstock. **All data is fictional.**
   - `agents/`: the six agents the graph uses (case-extractor, context-enricher,
     consistency-judge, clarifier, action-drafter, chase-writer): their type, model
     profile, Langfuse prompt, input and output.
+  - `rules.yaml`: Vinnies' business rules: R02 amount over the guideline's limit, R03
+    repeat request inside the repeat window, R05 a new household needs contact and
+    consent. Limits and windows come from Vinnies' own guidelines (looked up by enrich);
+    the YAML holds defaults. R01 and R04 are the ontology's required fields and its
+    `urgent-needs-follow-up` constraint.
   - `prompts/`: the copy of each prompt Rootstock falls back to when Langfuse is
-    unreachable or doesn't have it yet: `extract-case.yaml` (`vinnies/extract-case`) and
-    `enrich.yaml` (`vinnies/enrich`). Each file has the shape of Langfuse's create-prompt request,
+    unreachable or doesn't have it yet: `extract-case.yaml` (`vinnies/extract-case`),
+    `enrich.yaml` (`vinnies/enrich`) and `judge.yaml` (`vinnies/judge`). Each file has the shape of Langfuse's create-prompt request,
     so it is also what gets published to Langfuse (`POST /api/public/v2/prompts`, or paste
     it into the Langfuse UI as a chat prompt with label `production`).
   - `samples/case-extractor/`: five fictional visit notes, each with the record extracting
     it must produce; `samples/context-enricher/`: a known and an unknown household, with
-    the lookups enrich must make. Rootstock's `PackSamplesLiveIT` checks them against the
-    real model (and, for enrich, this MCP server).
+    the lookups enrich must make; `samples/consistency-judge/`: records with a planted
+    mistake, and a faithful one; `samples/cases/`: the four Iteration 8 demo problems as
+    whole cases. Rootstock's `PackSamplesLiveIT` and `CaseRunLiveIT` check them against
+    the real model (and, for enrich and whole cases, this MCP server).
 
   In `rootstock-core/.env`, point Rootstock at it with
   `ROOTSTOCK_PACKS_PATHS=<repo>/vinnies/vinnies-pack/packs` and
   `ROOTSTOCK_TOOLS_FILE=<repo>/vinnies/vinnies-pack/packs/vinnies/tools.yaml`.
-  Ingest, extract, enrich and validate's required-field check are real; the other nodes
-  are still Rootstock stubs (the flow, pauses and trace are real, their work isn't yet).
+  Ingest, extract, enrich and validate are real; the other nodes are still Rootstock
+  stubs (the flow, pauses and trace are real, their work isn't yet).
   Enrich's `context-enricher` looks up each need's guideline and local services itself
   (its `plan`), then lets the model find the household by name and suburb and fetch its
   history.

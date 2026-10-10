@@ -4,6 +4,7 @@ import com.networknt.schema.Error;
 import com.networknt.schema.Schema;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
+import com.rootstock.core.rules.RuleSpec;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -36,6 +37,11 @@ public final class PackGraphLoader {
 
 	public static final String GRAPH_FILE = "graph.yaml";
 	public static final String AGENTS_DIR = "agents";
+	public static final String RULES_FILE = "rules.yaml";
+
+	/** rules.yaml as bound: each rule's entry, settings and all. */
+	record RulesDefinition(List<Map<String, Object>> rules) {
+	}
 
 	private static final JsonMapper JSON = JsonMapper.builder()
 			.disable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
@@ -43,6 +49,7 @@ public final class PackGraphLoader {
 
 	private final Schema graphSchema = schema("/schemas/graph.schema.json");
 	private final Schema agentSchema = schema("/schemas/agent.schema.json");
+	private final Schema rulesSchema = schema("/schemas/rules.schema.json");
 
 	public static boolean hasGraph(Path packDir) {
 		return Files.isRegularFile(packDir.resolve(GRAPH_FILE));
@@ -68,10 +75,16 @@ public final class PackGraphLoader {
 				problems.add(new GraphProblem(name, "metadata.name", "agent '" + agent.name() + "' is defined twice"));
 			}
 		}
-		if (!problems.isEmpty()) {
-			throw new GraphDefinitionException("Pack '" + pack + "' has an unreadable graph or agents", problems);
+		List<RuleSpec> rules = List.of();
+		if (Files.isRegularFile(packDir.resolve(RULES_FILE))) {
+			RulesDefinition definition = read(packDir.resolve(RULES_FILE), RULES_FILE, rulesSchema,
+					RulesDefinition.class, problems);
+			rules = definition == null ? List.of() : definition.rules().stream().map(PackGraphLoader::spec).toList();
 		}
-		return new PackGraph(pack, graph, agents);
+		if (!problems.isEmpty()) {
+			throw new GraphDefinitionException("Pack '" + pack + "' has an unreadable graph, agents or rules", problems);
+		}
+		return new PackGraph(pack, graph, agents, rules);
 	}
 
 	private <T> T read(Path file, String name, Schema schema, Class<T> type, List<GraphProblem> problems) {
@@ -104,15 +117,30 @@ public final class PackGraphLoader {
 			return null;
 		}
 		JsonNode bindable = node;
-		if (type == AgentDefinition.class || type == GraphDefinition.class) {
+		if (node.isObject() && node.has("apiVersion")) {
 			// apiVersion and kind are checked by the schema; the records don't carry them.
 			bindable = ((tools.jackson.databind.node.ObjectNode) node.deepCopy()).remove(List.of("apiVersion", "kind"));
 		}
 		return JSON.treeToValue(bindable, type);
 	}
 
+	private static final List<String> RULE_KEYS = List.of("id", "kind", "severity", "answerableBy", "description",
+			"message");
+
+	/** A rule's own keys; the rest are its kind's settings. */
+	private static RuleSpec spec(Map<String, Object> entry) {
+		Map<String, Object> config = new LinkedHashMap<>(entry);
+		RULE_KEYS.forEach(config::remove);
+		return new RuleSpec(text(entry.get("id")), text(entry.get("kind")), text(entry.get("severity")),
+				text(entry.get("answerableBy")), text(entry.get("description")), text(entry.get("message")), config);
+	}
+
+	private static String text(Object value) {
+		return value == null ? null : String.valueOf(value);
+	}
+
 	/** The validator's JSON pointer ({@code /nodes/3/type}) as people write it ({@code nodes[3].type}). */
-	static String location(Error e) {
+	public static String location(Error e) {
 		String path = e.getInstanceLocation() == null ? "" : e.getInstanceLocation().toString();
 		StringBuilder out = new StringBuilder();
 		for (String part : path.replaceFirst("^\\$\\.?", "").split("[/.]")) {

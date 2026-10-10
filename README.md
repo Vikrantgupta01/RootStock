@@ -491,12 +491,28 @@ graph into LangGraph4j (`core.graph.GraphCompiler`).
   `clarify`, `human-review`, `tool-executor`, `await-input`) or agents whose
   type is `structured-extraction`, `tool-calling`, `judge` or `drafter`. Real
   so far (`core.graph.nodes`): `ingest` (tidies the text, records the case and
-  trace ids), `structured-extraction` and `tool-calling` (below) and `rules`, which so far checks
-  one thing: every field the ontology requires is in the extracted record; each
-  missing one is a BLOCKING issue the submitter can answer, so the case goes to
-  clarify. The rest are stubs (`core.graph.stub.StubNodes`) that record what
-  they would do in the `audit` channel and never call a model or a client
-  system; real implementations replace them type by type.
+  trace ids), `structured-extraction`, `tool-calling` and `judge` (below), and
+  `rules` (validate, below). The rest are stubs (`core.graph.stub.StubNodes`)
+  that record what they would do in the `audit` channel and never call a model
+  or a client system; real implementations replace them type by type.
+- **Validate (`rules`)** checks a case in four layers, cheapest and most certain
+  first, and replaces the `issues` channel with everything found. Each issue has
+  a severity (BLOCKING stops the case reaching draft; WARNING goes to review),
+  who can resolve it (SUBMITTER → clarify, EXTERNAL → chase, REVIEWER → review)
+  and the layer that found it:
+  1. *Structural*: the record still matches its schema (types, codes; matters
+     after a reviewer's edit) and every field the ontology requires is there.
+  2. *Semantic*: the ontology's constraints, e.g. risk flags need HIGH urgency.
+  3. *Business*: the pack's `rules.yaml`, built from Rootstock rule kinds
+     (`limit`, `frequency`, `requires`; a `RuleKind` bean adds one). Thresholds
+     can come from a lookup enrich made (`{ lookup: get_assistance_guidelines,
+     match: …, field: limitPerVisitAud, default: … }`), so the client's own
+     system sets them. A broken rule stops startup; a rule that fails while
+     running becomes a warning.
+  4. *Judgment*: the `judge` agent named in the node's config compares the
+     record with the input and flags anything invented, contradicted or
+     missed; its findings are always warnings, and a judge that can't run is a
+     warning too.
 - **`structured-extraction`**: one model call through `LlmService` with the
   agent's model profile and its Langfuse prompt (fetched by name and label
   through `PromptRegistry`, cached, with the pack's `prompts/` copy as the
@@ -537,9 +553,10 @@ graph into LangGraph4j (`core.graph.GraphCompiler`).
 
 **Cases screen** (`/cases`): submit visit notes and watch each node light up
 as the run goes, until it pauses (before review, or after clarify) or ends. It
-shows the notes as submitted beside the extracted record (codes explained from
-the ontology on hover, required fields the notes don't give marked), the
-context enrich gathered from the client system (its summary, then each lookup
+shows validate's issues (blocking first, with the field, the check that found
+each and who resolves it), the notes as submitted beside the extracted record
+(codes explained from the ontology on hover, missing and flagged fields
+marked), the context enrich gathered from the client system (its summary, then each lookup
 with its arguments, status and answer, planned or asked for by the model), the
 event log, the issues, actions and audit trail, and a link to the run's Langfuse
 trace: one `process-case` trace per run, with the case id as the session, a

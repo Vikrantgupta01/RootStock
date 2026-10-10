@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.rootstock.core.graph.AuditEntry;
 import com.rootstock.core.graph.CaseState;
+import com.rootstock.core.graph.Lookup;
 import com.rootstock.core.graph.NodeContext;
 import com.rootstock.core.graph.PackGraph;
 import com.rootstock.core.graph.RepairsPack;
@@ -77,8 +78,8 @@ class ToolCallingAgentTest {
 	}
 
 	@SuppressWarnings("unchecked")
-	private static List<ToolCallingAgent.Lookup> lookups(Map<String, Object> update) {
-		return (List<ToolCallingAgent.Lookup>) ((Map<String, Object>) update.get("context")).get("lookups");
+	private static List<Lookup> lookups(Map<String, Object> update) {
+		return (List<Lookup>) ((Map<String, Object>) update.get("context")).get("lookups");
 	}
 
 	@SuppressWarnings("unchecked")
@@ -94,8 +95,8 @@ class ToolCallingAgentTest {
 		Map<String, Object> update = run(model);
 
 		assertThat(sent).containsExactly("list_contractors {trade=PLUMBING}", "find_property {address=1 Main St}");
-		assertThat(lookups(update)).extracting(ToolCallingAgent.Lookup::source, ToolCallingAgent.Lookup::tool,
-				ToolCallingAgent.Lookup::status).containsExactly(
+		assertThat(lookups(update)).extracting(Lookup::source, Lookup::tool,
+				Lookup::status).containsExactly(
 						org.assertj.core.groups.Tuple.tuple("plan", "list_contractors", "OK"),
 						org.assertj.core.groups.Tuple.tuple("model", "find_property", "OK"));
 		assertThat(lookups(update).get(1).result()).isEqualTo(Map.of("propertyRef", "P-7", "address", "1 Main St"));
@@ -157,7 +158,7 @@ class ToolCallingAgentTest {
 		Map<String, Object> update = run(model, narrow, Map.of("defects", List.of(Map.of("trade", "PLUMBING"))));
 
 		assertThat(sent).isEmpty();
-		assertThat(lookups(update)).extracting(ToolCallingAgent.Lookup::status).containsExactly("BLOCKED", "BLOCKED");
+		assertThat(lookups(update)).extracting(Lookup::status).containsExactly("BLOCKED", "BLOCKED");
 		assertThat(((ToolCallingChatOptions) model.prompts().get(0).getOptions()).getToolCallbacks())
 				.extracting(t -> t.getToolDefinition().name()).containsExactly("find_property");
 	}

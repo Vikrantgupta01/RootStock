@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rootstock.sinewlabs.example/schemas/rules.schema.json",
+  "title": "Rootstock rules",
+  "description": "A pack's business rules (rules.yaml): each one an instance of a Rootstock rule kind (limit, frequency, requires, or a kind added as a bean), with its severity and who can resolve a breach. The kind checks its own settings at startup.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "rules"],
+  "properties": {
+    "apiVersion": { "const": "rootstock/v1" },
+    "kind": { "const": "Rules" },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "severity"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$" },
+          "kind": { "type": "string" },
+          "severity": { "enum": ["BLOCKING", "WARNING"] },
+          "answerableBy": { "enum": ["SUBMITTER", "EXTERNAL", "REVIEWER"] },
+          "description": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}

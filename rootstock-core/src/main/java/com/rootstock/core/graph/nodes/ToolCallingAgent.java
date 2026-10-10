@@ -3,6 +3,7 @@ package com.rootstock.core.graph.nodes;
 import com.rootstock.core.graph.AgentDefinition;
 import com.rootstock.core.graph.AuditEntry;
 import com.rootstock.core.graph.CaseState;
+import com.rootstock.core.graph.Lookup;
 import com.rootstock.core.graph.NodeContext;
 import com.rootstock.core.graph.NodeFactory;
 import com.rootstock.core.llm.LlmService;
@@ -12,7 +13,6 @@ import com.rootstock.core.tools.ToolCallContext;
 import com.rootstock.core.tools.ToolCallResult;
 import com.rootstock.core.tools.ToolGateway;
 import com.rootstock.core.tools.ToolSpec;
-import java.io.Serializable;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -66,19 +66,6 @@ public final class ToolCallingAgent implements NodeFactory {
 	static final String LAST_TURN = "That was your last lookup. Answer now with what you have; do not ask for more tools.";
 
 	private static final JsonMapper JSON = JsonMapper.builder().build();
-
-	/**
-	 * One tool call and what came of it.
-	 *
-	 * @param source  {@code plan} or {@code model}
-	 * @param status  the gateway's status, or {@code REFUSED} for a tool outside the agent's own list,
-	 *                or {@code SKIPPED} for a plan step missing an argument
-	 * @param result  the output, parsed when it is JSON; null unless the call succeeded
-	 * @param message why it did not succeed; null when it did
-	 */
-	public record Lookup(String source, String tool, Map<String, Object> arguments, String status, Object result,
-			String message) implements Serializable {
-	}
 
 	private final LlmService llm;
 	private final PromptRegistry prompts;

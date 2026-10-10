@@ -1,0 +1,25 @@
+apiVersion: rootstock/v1
+kind: Rules
+rules:
+  - id: estimate-limit
+    kind: limit
+    severity: WARNING
+    forEach: $.record.visits
+    amount: estimateAud
+    limit: { lookup: list_contractors, match: { trade: $item.trade }, field: maxEstimateAud, default: 2000 }
+    message: "{item.trade} estimate of ${amount} is over the ${limit} cap"
+  - id: repeat-job
+    kind: frequency
+    severity: WARNING
+    forEach: $.record.defects
+    key: trade
+    history: { lookup: find_property, list: jobs, key: trade, date: reportedOn }
+    window: 30
+    since: $.record.reportedOn
+  - id: urgent-needs-phone
+    kind: requires
+    severity: BLOCKING
+    when:
+      equals: { $.record.priority: URGENT }
+    require:
+      $.record.tenant.phone: present
