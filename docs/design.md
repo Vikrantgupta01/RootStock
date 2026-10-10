@@ -838,6 +838,7 @@ Granular tasks grouped into **iterations**. Each iteration is a vertical slice t
 
 | ID | Task | Done when |
 | --- | --- | --- |
+| 6.0 | Extraction mode for the schema generator: fields the ontology marks required may be `null` ("not in the notes"), so the model never has to invent a value; validate turns a missing required field into a BLOCKING issue answerable by the submitter, which routes to clarify | Snapshot of the extraction-mode schema; a missing visit date becomes a clarify question, not a made-up date |
 | 6.1 | `LlmService` with model profiles; `PromptRegistry` from Langfuse with cache and fallback (reuse your existing integration) | Prompt fetched by name and label |
 | 6.2 | `ingest` node | Notes normalised, case and trace ids assigned |
 | 6.3 | `structured-extraction` agent using the projection schema, with validation and retry | Invalid output is retried, then parked |
