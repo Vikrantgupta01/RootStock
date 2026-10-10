@@ -89,6 +89,9 @@ covers all three layers; it is the only class outside them.
   (null allowed), and validate turns a missing required field into a question
   (`RequiredFields`). Model output that never matches its schema parks the case
   (`CaseParkedException`); it is not an error.
+- A tool-calling agent's tools go through the `ToolGateway` as its graph node. The model is
+  offered only the agent's `tools.allow` (checked against the node's allowlist at startup);
+  fixed lookups belong in the agent's `plan`, not in the prompt.
 
 ## Not yet compliant
 

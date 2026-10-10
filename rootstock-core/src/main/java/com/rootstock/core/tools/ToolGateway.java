@@ -2,6 +2,7 @@ package com.rootstock.core.tools;
 
 import com.rootstock.core.tools.ToolCallResult.Status;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * The single path from Rootstock into a client system. Every tool call goes
@@ -52,6 +53,24 @@ public class ToolGateway {
 		catch (RuntimeException ex) {
 			return result(Status.UNAVAILABLE, node, tool, definition.connection(), null,
 					"Could not reach '" + definition.connection() + "': " + rootCause(ex), start);
+		}
+	}
+
+	/**
+	 * A tool's description for a model, under its logical name, only if
+	 * {@code node} may call it: a model is never shown a tool it may not use.
+	 */
+	public Optional<ToolSpec> describe(String node, String tool) {
+		ToolDefinition definition = catalog.tool(tool).orElse(null);
+		if (definition == null || !catalog.allows(node, tool)) {
+			return Optional.empty();
+		}
+		try {
+			return invoker.describe(definition)
+					.map(spec -> new ToolSpec(definition.name(), spec.description(), spec.inputSchema()));
+		}
+		catch (RuntimeException ex) {
+			return Optional.empty();
 		}
 	}
 

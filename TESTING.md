@@ -47,7 +47,10 @@ without it that test is skipped.)
   case; a missing required field that sends a whole run to clarify
   (`CaseRunServiceTest`); timeouts, and the trace context reaching the call's
   worker thread. `PromptRegistryTest` covers caching and every fallback to the
-  bundled copy.
+  bundled copy. `ToolCallingAgentTest` drives the lookup loop through a real
+  `ToolGateway` with a fake client system: plan first, the loop limit, a tool
+  outside the agent's list refused and never sent, one outside the node's
+  allowlist blocked and never offered, skipped plan steps, tool errors.
 - **Integration tests** (`*IT`, `mvn verify`) start the whole app against RDS
   in a throwaway schema (`rootstock_test_<timestamp>_<id>`), created and
   Flyway-migrated for the run and dropped at the end (`ThrowawaySchemaConfig`).
@@ -55,9 +58,13 @@ without it that test is skipped.)
   can leave a schema behind: `DROP SCHEMA <name> CASCADE`.
 - **Live tests** (`@Tag("live")`) call Bedrock, so they're excluded unless
   asked for. `BedrockChatLiveIT` makes one real model call. `PackSamplesLiveIT`
-  runs each configured pack's structured-extraction agents on their sample
-  inputs (`<pack>/samples/<agent>/*.yaml`) with the real model and prompt, and
-  checks each record field by field (one model call per sample).
+  runs each configured pack's structured-extraction and tool-calling agents on
+  their sample inputs (`<pack>/samples/<agent>/*.yaml`) with the real model and
+  prompt, and checks each record field by field, or which lookups succeeded and
+  with what arguments. `CaseRunLiveIT` runs a pack's first extraction sample
+  through the whole graph and checks it stops where a person is needed. The
+  tool-calling samples and `CaseRunLiveIT` need the client system (the Vinnies
+  MCP server) running.
 
 ## 2. One-time AWS setup (required — there's no offline mode)
 

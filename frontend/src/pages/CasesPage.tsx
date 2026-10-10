@@ -2,13 +2,15 @@ import { useState } from 'react'
 import type { CaseGraph, CaseRun, RunEvent, Simulate } from '../api/cases'
 import { AppShell } from '../components/AppShell'
 import { useCaseDetail, useCaseGraph, useRecentCases, useRunEvents, useSubmitCase } from '../hooks/useCases'
+import { CaseContext } from './CaseContext'
 import { NotesAndRecord } from './CaseRecord'
 import './KnowledgePage.css'
 import './CasesPage.css'
 
 // Fictional, like all demo data.
-const SAMPLE_NOTES = `Visited Mrs T at Doveton today (Tues). 3 kids, eldest 14. Got a final notice from AGL, power off Friday if not paid ($412).
-Fridge nearly empty, kids went hungry Sunday. Gave $80 Coles voucher. She's behind on rent 2 wks but landlord ok for now.
+// Linh Tran in Blacktown is a household in the Vinnies demo data, so enrich finds them.
+const SAMPLE_NOTES = `Visited Linh Tran at home in Blacktown today. Partner and 2 kids. Got a final notice from the power company, power off Friday if not paid ($412).
+Fridge nearly empty, kids went hungry Sunday. Gave $80 Coles voucher. Behind on rent 2 wks but landlord ok for now.
 Happy for us to share details with the financial counsellor. Follow up next week.`
 
 type NodeState = 'idle' | 'running' | 'done' | 'failed' | 'waiting'
@@ -50,7 +52,9 @@ export function CasesPage() {
       <p className="page__lead">
         Submit visit notes and watch the pack's graph run them, node by node. Extract is real: a model turns the notes
         into a case record using the ontology's own categories, and validate asks for any required detail the notes
-        don't give instead of letting anyone guess it. The other nodes are still stubs. A run stops where a person is
+        don't give instead of letting anyone guess it. Enrich looks the household, its history, the guidelines and
+        local services up in the client system, only through the tools its node is allowed. The other nodes are
+        still stubs. A run stops where a person is
         needed: before review, or after clarify asks the member a question.
       </p>
 
@@ -107,7 +111,12 @@ export function CasesPage() {
             <span className="muted cases__id">case {selected}</span>
           </div>
           {streamError && <div className="banner banner--error">{streamError}</div>}
-          {detail.data && detail.data.status !== 'RUNNING' && <NotesAndRecord run={detail.data} />}
+          {detail.data && detail.data.status !== 'RUNNING' && (
+            <>
+              <NotesAndRecord run={detail.data} />
+              <CaseContext run={detail.data} />
+            </>
+          )}
           <EventLog events={events} />
           {detail.data?.result && detail.data.status !== 'RUNNING' && <Result run={detail.data} />}
         </section>

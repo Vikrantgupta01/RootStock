@@ -15,15 +15,28 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 
-/** A chat model that replies with the given texts in turn and remembers every prompt. No Bedrock. */
+/**
+ * A chat model that replies with the given texts (or messages, e.g. tool calls)
+ * in turn, repeating the last, and remembers every prompt. No Bedrock.
+ */
 public final class ScriptedChatModel implements ChatModel {
 
-	private final Deque<String> replies;
+	private final Deque<AssistantMessage> replies;
 	private final List<Prompt> prompts = new CopyOnWriteArrayList<>();
 	private Duration delay = Duration.ZERO;
 
 	public ScriptedChatModel(String... replies) {
+		this.replies = new ArrayDeque<>(Arrays.stream(replies).map(AssistantMessage::new).toList());
+	}
+
+	public ScriptedChatModel(AssistantMessage... replies) {
 		this.replies = new ArrayDeque<>(Arrays.asList(replies));
+	}
+
+	/** A reply asking for one tool. */
+	public static AssistantMessage toolCall(String id, String tool, String argumentsJson) {
+		return AssistantMessage.builder().content("")
+				.toolCalls(List.of(new AssistantMessage.ToolCall(id, "function", tool, argumentsJson))).build();
 	}
 
 	public ScriptedChatModel delay(Duration delay) {
@@ -43,8 +56,8 @@ public final class ScriptedChatModel implements ChatModel {
 				throw new IllegalStateException(e);
 			}
 		}
-		String reply = replies.size() > 1 ? replies.poll() : replies.peek();
-		return new ChatResponse(List.of(new Generation(new AssistantMessage(reply))));
+		AssistantMessage reply = replies.size() > 1 ? replies.poll() : replies.peek();
+		return new ChatResponse(List.of(new Generation(reply)));
 	}
 
 	public List<Prompt> prompts() {
@@ -55,8 +68,9 @@ public final class ScriptedChatModel implements ChatModel {
 		return new StaticListableBeanFactory(Map.of("chatModel", this)).getBeanProvider(ChatModel.class);
 	}
 
-	/** An LlmService over this model with an {@code extraction} profile. */
+	/** An LlmService over this model with {@code extraction} and {@code fast} profiles. */
 	public LlmService service() {
-		return new LlmService(provider(), Map.of("extraction", new ModelProfile("test-model", 0.0, 1000)));
+		return new LlmService(provider(), Map.of("extraction", new ModelProfile("test-model", 0.0, 1000),
+				"fast", new ModelProfile("fast-model", 0.0, 500)));
 	}
 }

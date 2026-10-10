@@ -3,10 +3,16 @@ package com.rootstock.autoconfig.mcp;
 import com.rootstock.core.tools.ToolCallContext;
 import com.rootstock.core.tools.ToolDefinition;
 import com.rootstock.core.tools.ToolInvoker;
+import com.rootstock.core.tools.ToolSpec;
 import io.modelcontextprotocol.spec.McpError;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Calls a tool over MCP, on a session holding a token for the tool's access
@@ -20,10 +26,37 @@ import java.util.stream.Collectors;
  */
 public class McpToolInvoker implements ToolInvoker {
 
+	private static final JsonMapper JSON = JsonMapper.builder().build();
+
 	private final McpConnections connections;
+	/** What each connection offers, asked once and again only when a tool is not found. */
+	private final Map<String, Map<String, McpSchema.Tool>> offered = new ConcurrentHashMap<>();
 
 	public McpToolInvoker(McpConnections connections) {
 		this.connections = connections;
+	}
+
+	@Override
+	public Optional<ToolSpec> describe(ToolDefinition tool) {
+		McpSchema.Tool remote = offered(tool.connection(), false).get(tool.remoteName());
+		if (remote == null) {
+			remote = offered(tool.connection(), true).get(tool.remoteName());
+		}
+		if (remote == null) {
+			return Optional.empty();
+		}
+		// Through a map, so fields the schema leaves unset are dropped rather than sent as null.
+		Map<String, Object> schema = new LinkedHashMap<>(JSON.convertValue(remote.inputSchema(), Map.class));
+		schema.values().removeIf(Objects::isNull);
+		return Optional.of(new ToolSpec(tool.name(), remote.description(), JSON.writeValueAsString(schema)));
+	}
+
+	private Map<String, McpSchema.Tool> offered(String connection, boolean refresh) {
+		if (refresh) {
+			offered.remove(connection);
+		}
+		return offered.computeIfAbsent(connection, c -> connections.listTools(c).stream()
+				.collect(Collectors.toMap(McpSchema.Tool::name, t -> t, (a, b) -> a)));
 	}
 
 	@Override

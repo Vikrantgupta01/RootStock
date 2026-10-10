@@ -23,18 +23,23 @@ The Vinnies demo domain for Sinew Rootstock. **All data is fictional.**
     consistency-judge, clarifier, action-drafter, chase-writer): their type, model
     profile, Langfuse prompt, input and output.
   - `prompts/`: the copy of each prompt Rootstock falls back to when Langfuse is
-    unreachable or doesn't have it yet. So far `extract-case.yaml`
-    (`vinnies/extract-case`). Each file has the shape of Langfuse's create-prompt request,
+    unreachable or doesn't have it yet: `extract-case.yaml` (`vinnies/extract-case`) and
+    `enrich.yaml` (`vinnies/enrich`). Each file has the shape of Langfuse's create-prompt request,
     so it is also what gets published to Langfuse (`POST /api/public/v2/prompts`, or paste
     it into the Langfuse UI as a chat prompt with label `production`).
   - `samples/case-extractor/`: five fictional visit notes, each with the record extracting
-    it must produce; Rootstock's `PackSamplesLiveIT` checks them against the real model.
+    it must produce; `samples/context-enricher/`: a known and an unknown household, with
+    the lookups enrich must make. Rootstock's `PackSamplesLiveIT` checks them against the
+    real model (and, for enrich, this MCP server).
 
   In `rootstock-core/.env`, point Rootstock at it with
   `ROOTSTOCK_PACKS_PATHS=<repo>/vinnies/vinnies-pack/packs` and
   `ROOTSTOCK_TOOLS_FILE=<repo>/vinnies/vinnies-pack/packs/vinnies/tools.yaml`.
-  Ingest, extract and validate's required-field check are real; the other nodes are
-  still Rootstock stubs (the flow, pauses and trace are real, their work isn't yet).
+  Ingest, extract, enrich and validate's required-field check are real; the other nodes
+  are still Rootstock stubs (the flow, pauses and trace are real, their work isn't yet).
+  Enrich's `context-enricher` looks up each need's guideline and local services itself
+  (its `plan`), then lets the model find the household by name and suburb and fetch its
+  history.
 
 `vinnies-mcp-server` is a dummy St Vincent de Paul (Vinnies) application. It plays the
 client's existing system, a stand-in for the system a real client already runs, and

@@ -1,0 +1,13 @@
+# No such household in the demo data: the enricher must say so, not pick one.
+input: |
+  Visit 8 Oct 2026, Penrith. Met Bartholomew Quill, lives alone, new to the area.
+  Behind on rent by three weeks.
+record:
+  urgency: MEDIUM
+  visitDate: "2026-10-08"
+  household: { suburb: Penrith, adults: 1 }
+  needs:
+    - { category: RENT, details: Three weeks behind on rent. }
+expect:
+  ok: [find_household, get_assistance_guidelines, search_local_services]
+  notOk: [get_assistance_history]

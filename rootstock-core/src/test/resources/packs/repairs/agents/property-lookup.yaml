@@ -4,7 +4,10 @@ metadata: { name: property-lookup }
 spec:
   type: tool-calling
   model: fast
+  prompt: { name: repairs/lookup }
   input:  { record: $.record }
   tools: { connection: landlord, allow: [find_property, list_contractors] }
+  plan:
+    - { tool: list_contractors, forEach: $.record.defects, with: { trade: $item.trade } }
   output: { writeTo: context }
   limits: { maxIterations: 3 }

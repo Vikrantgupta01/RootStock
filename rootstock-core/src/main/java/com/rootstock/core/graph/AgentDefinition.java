@@ -23,10 +23,26 @@ public record AgentDefinition(Metadata metadata, Spec spec) {
 	 * @param input  state paths the agent reads, e.g. {@code notes: $.rawInput}
 	 */
 	public record Spec(String type, String model, Prompt prompt, Map<String, String> input, Output output, Tools tools,
-			Limits limits) {
+			Limits limits, List<PlanStep> plan) {
 
 		public Spec {
 			input = input == null ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(input));
+			plan = plan == null ? List.of() : List.copyOf(plan);
+		}
+	}
+
+	/**
+	 * A lookup made before the model is asked anything (the pack's context plan):
+	 * a fixed tool call whose arguments come from the case state, not from the
+	 * model.
+	 *
+	 * @param forEach a state path to a list; the call is made once per item, and {@code $item.x} reads that item
+	 * @param with    argument name to a state path ({@code $.record.household.suburb}) or {@code $item.<field>}
+	 */
+	public record PlanStep(String tool, String forEach, Map<String, String> with) {
+
+		public PlanStep {
+			with = with == null ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(with));
 		}
 	}
 

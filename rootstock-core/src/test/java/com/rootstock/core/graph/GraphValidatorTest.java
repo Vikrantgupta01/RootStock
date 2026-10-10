@@ -49,6 +49,19 @@ class GraphValidatorTest {
 	}
 
 	@Test
+	void aPlanMayOnlyUseTheAgentsOwnToolsAndReadKnownState() {
+		assertThat(problems("agents/property-lookup.yaml", s -> s.replace(
+				"{ tool: list_contractors, forEach: $.record.defects, with: { trade: $item.trade } }",
+				"{ tool: book_visit, with: { trade: $item.trade, job: $.jobs.id } }"))).containsExactlyInAnyOrder(
+						"agents/property-lookup.yaml spec.plan[0].tool: tool 'book_visit' is not in the agent's tools.allow "
+								+ "[find_property, list_contractors]",
+						"agents/property-lookup.yaml spec.plan[0].with: '$item.trade' reads $item, but the step has no forEach",
+						"agents/property-lookup.yaml spec.plan[0]: '$.jobs.id' reads unknown state channel 'jobs'; known: "
+								+ "[actions, audit, caseId, clarifyRounds, context, issues, options, pack, questions, rawInput, "
+								+ "record, review, runId, traceId]");
+	}
+
+	@Test
 	void anUnknownAgent() {
 		assertThat(problems("graph.yaml", s -> s.replace("agent: job-extractor", "agent: job-reader")))
 				.contains("graph.yaml nodes[1] (extract): unknown agent 'job-reader'; agents/ has [job-extractor, "

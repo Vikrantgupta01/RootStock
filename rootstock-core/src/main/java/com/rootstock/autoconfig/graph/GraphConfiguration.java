@@ -17,6 +17,7 @@ import com.rootstock.core.graph.PackGraphLoader;
 import com.rootstock.core.graph.nodes.IngestNode;
 import com.rootstock.core.graph.nodes.RulesNode;
 import com.rootstock.core.graph.nodes.StructuredExtraction;
+import com.rootstock.core.graph.nodes.ToolCallingAgent;
 import com.rootstock.core.graph.stub.StubNodes;
 import com.rootstock.core.llm.LlmService;
 import com.rootstock.core.llm.PromptRegistry;
@@ -24,6 +25,7 @@ import com.rootstock.core.ontology.ResolvedOntology;
 import com.rootstock.core.pack.LoadedPack;
 import com.rootstock.core.pack.PackRegistry;
 import com.rootstock.core.tools.ToolCatalog;
+import com.rootstock.core.tools.ToolGateway;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.util.ArrayList;
@@ -76,6 +78,11 @@ public class GraphConfiguration {
 	@Bean
 	StructuredExtraction structuredExtraction(LlmService llm, PromptRegistry prompts) {
 		return new StructuredExtraction(llm, prompts, Clock.systemDefaultZone());
+	}
+
+	@Bean
+	ToolCallingAgent toolCallingAgent(LlmService llm, PromptRegistry prompts, ToolGateway gateway) {
+		return new ToolCallingAgent(llm, prompts, gateway, Clock.systemDefaultZone());
 	}
 
 	@Bean

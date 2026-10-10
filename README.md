@@ -491,7 +491,7 @@ graph into LangGraph4j (`core.graph.GraphCompiler`).
   `clarify`, `human-review`, `tool-executor`, `await-input`) or agents whose
   type is `structured-extraction`, `tool-calling`, `judge` or `drafter`. Real
   so far (`core.graph.nodes`): `ingest` (tidies the text, records the case and
-  trace ids), `structured-extraction` (below) and `rules`, which so far checks
+  trace ids), `structured-extraction` and `tool-calling` (below) and `rules`, which so far checks
   one thing: every field the ontology requires is in the extracted record; each
   missing one is a BLOCKING issue the submitter can answer, so the case goes to
   clarify. The rest are stubs (`core.graph.stub.StubNodes`) that record what
@@ -506,6 +506,17 @@ graph into LangGraph4j (`core.graph.GraphCompiler`).
   invent a value), `{{glossary}}` and `{{today}}`. A reply that doesn't match
   the schema is sent back with what was wrong, up to `limits.retries` times
   (default 2); after that the run stops as **PARKED** for a person.
+- **`tool-calling`**: looks things up in a client system. First the agent's
+  `plan` runs: fixed lookups with arguments from the case state
+  (`{ tool: get_assistance_guidelines, forEach: $.record.needs, with: { assistanceType: $item.category } }`),
+  no model involved. Then a bounded loop: the model sees those results and may
+  ask for more (e.g. find the household, then its history), at most
+  `limits.maxIterations` model calls (default 4, then it must answer). Every
+  call goes through the `ToolGateway` as the graph node, so `tools.yaml`'s
+  allowlist applies; the model is offered only the agent's own `tools.allow`,
+  and anything else it asks for is refused before it is sent. Failures are
+  recorded and shown to the model, never fatal. The agent writes
+  `{lookups, summary, modelCalls}` to its channel.
 - **Model profiles** (`rootstock.llm.profiles`): agents name a kind of model
   (`extraction`, `fast`, `drafting`), never a model id; an agent naming an
   unknown profile stops startup.
@@ -527,8 +538,10 @@ graph into LangGraph4j (`core.graph.GraphCompiler`).
 **Cases screen** (`/cases`): submit visit notes and watch each node light up
 as the run goes, until it pauses (before review, or after clarify) or ends. It
 shows the notes as submitted beside the extracted record (codes explained from
-the ontology on hover, required fields the notes don't give marked), the event
-log, the issues, actions and audit trail, and a link to the run's Langfuse
+the ontology on hover, required fields the notes don't give marked), the
+context enrich gathered from the client system (its summary, then each lookup
+with its arguments, status and answer, planned or asked for by the model), the
+event log, the issues, actions and audit trail, and a link to the run's Langfuse
 trace: one `process-case` trace per run, with the case id as the session, a
 `node-<id>` span per node, and the extraction's generation linked to the
 Langfuse prompt version it used. A **Simulate** option still drives the chase

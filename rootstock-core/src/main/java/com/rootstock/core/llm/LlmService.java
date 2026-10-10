@@ -1,6 +1,7 @@
 package com.rootstock.core.llm;
 
 import com.rootstock.core.chat.AiUnavailableException;
+import com.rootstock.core.tools.ToolSpec;
 import io.micrometer.context.ContextSnapshot;
 import io.micrometer.context.ContextSnapshotFactory;
 import java.time.Duration;
@@ -25,6 +26,8 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.ObjectProvider;
 
 /**
@@ -72,6 +75,40 @@ public final class LlmService implements AutoCloseable {
 	 * @throws AiUnavailableException when there is no model, it fails, or it takes too long
 	 */
 	public String call(String profile, List<PromptTemplate.Part> messages, PromptTemplate prompt, Duration timeout) {
+		return text(send(profile, messages(messages), List.of(), prompt, timeout));
+	}
+
+	/**
+	 * One model turn that may ask for tools. The tools are only declared: the
+	 * model's requests come back in the reply for the caller to run (through the
+	 * ToolGateway), never run here.
+	 *
+	 * @param messages the conversation so far, including earlier tool calls and their results
+	 * @return the reply as one assistant message: its text and any tool calls
+	 */
+	public AssistantMessage respond(String profile, List<Message> messages, List<ToolSpec> tools, PromptTemplate prompt,
+			Duration timeout) {
+		ChatResponse response = send(profile, messages, tools, prompt, timeout);
+		StringBuilder text = new StringBuilder();
+		List<AssistantMessage.ToolCall> calls = new ArrayList<>();
+		// Bedrock reports a reply's text and its tool calls as separate generations.
+		if (response != null) {
+			for (Generation g : response.getResults()) {
+				AssistantMessage out = g.getOutput();
+				if (out == null) {
+					continue;
+				}
+				if (out.getText() != null && !out.getText().isBlank()) {
+					text.append(text.isEmpty() ? "" : "\n").append(out.getText());
+				}
+				calls.addAll(out.getToolCalls());
+			}
+		}
+		return AssistantMessage.builder().content(text.toString()).toolCalls(calls).build();
+	}
+
+	private ChatResponse send(String profile, List<Message> messages, List<ToolSpec> tools, PromptTemplate prompt,
+			Duration timeout) {
 		ModelProfile p = profiles.get(profile);
 		if (p == null) {
 			throw new IllegalArgumentException("Unknown model profile '" + profile + "'; configured: " + profiles());
@@ -81,7 +118,8 @@ public final class LlmService implements AutoCloseable {
 			throw new AiUnavailableException("No chat backend is configured. Provide AWS Bedrock credentials and "
 					+ "set spring.ai.model.chat=bedrock-converse.");
 		}
-		Prompt request = new Prompt(messages(messages), options(model.getDefaultOptions(), p));
+		// A copy: the caller goes on adding to its conversation after this call.
+		Prompt request = new Prompt(List.copyOf(messages), options(model.getDefaultOptions(), p, tools));
 		// On a worker thread, so a hung call can be abandoned, but in the caller's
 		// observation context, so the generation nests under the calling node's span.
 		ContextSnapshot context = CONTEXT.captureAll();
@@ -95,7 +133,7 @@ public final class LlmService implements AutoCloseable {
 			}
 		}));
 		try {
-			return text(call.get(timeout.toMillis(), TimeUnit.MILLISECONDS));
+			return call.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
 		}
 		catch (TimeoutException e) {
 			call.cancel(true);
@@ -113,9 +151,18 @@ public final class LlmService implements AutoCloseable {
 		}
 	}
 
-	private static ChatOptions options(ChatOptions defaults, ModelProfile p) {
+	private static ChatOptions options(ChatOptions defaults, ModelProfile p, List<ToolSpec> tools) {
 		// Starting from the model's own defaults keeps anything Bedrock-specific.
-		ChatOptions.Builder<?> builder = defaults == null ? ChatOptions.builder() : defaults.mutate();
+		ChatOptions.Builder<?> builder;
+		if (tools.isEmpty()) {
+			builder = defaults == null ? ChatOptions.builder() : defaults.mutate();
+		}
+		else {
+			ToolCallingChatOptions.Builder<?> withTools = defaults instanceof ToolCallingChatOptions t ? t.mutate()
+					: ToolCallingChatOptions.builder();
+			withTools.toolCallbacks(tools.stream().map(DeclaredTool::new).map(ToolCallback.class::cast).toList());
+			builder = withTools;
+		}
 		if (p.model() != null && !p.model().isBlank()) {
 			builder.model(p.model());
 		}
@@ -128,7 +175,24 @@ public final class LlmService implements AutoCloseable {
 		return builder.build();
 	}
 
-	private static List<Message> messages(List<PromptTemplate.Part> parts) {
+	/** A tool the model may ask for; running it is the caller's job, so this never runs anything. */
+	private record DeclaredTool(ToolSpec spec) implements ToolCallback {
+
+		@Override
+		public org.springframework.ai.tool.definition.ToolDefinition getToolDefinition() {
+			return org.springframework.ai.tool.definition.ToolDefinition.builder().name(spec.name())
+					.description(spec.description() == null ? spec.name() : spec.description())
+					.inputSchema(spec.inputSchema()).build();
+		}
+
+		@Override
+		public String call(String toolInput) {
+			throw new UnsupportedOperationException("Tools are run by the caller, through the ToolGateway");
+		}
+	}
+
+	/** Prompt parts as chat messages. */
+	public static List<Message> messages(List<PromptTemplate.Part> parts) {
 		List<Message> out = new ArrayList<>();
 		for (PromptTemplate.Part p : parts) {
 			out.add(switch (p.role()) {

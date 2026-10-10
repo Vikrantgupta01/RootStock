@@ -266,6 +266,55 @@
   font-size: 0.85rem;
 }
 
+/* Context from the client system */
+
+.context {
+  margin-bottom: 1.5rem;
+}
+
+.context h3 {
+  margin-top: 0;
+}
+
+.context__summary {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  margin: 0 0 0.5rem;
+  line-height: 1.5;
+}
+
+.context__meta {
+  font-size: 0.8rem;
+  margin: 0 0 0.75rem;
+}
+
+.context__lookups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.context__lookup {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.75rem;
+}
+
+.context__lookup summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: baseline;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.context__lookup[open] summary {
+  margin-bottom: 0.6rem;
+}
+
 @media (max-width: 800px) {
   .record {
     grid-template-columns: 1fr;

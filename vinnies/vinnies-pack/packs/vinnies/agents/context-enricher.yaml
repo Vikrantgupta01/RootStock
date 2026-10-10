@@ -1,4 +1,4 @@
-apiVersion: rootstock/v1
+  apiVersion: rootstock/v1
 kind: Agent
 metadata:
   name: context-enricher
@@ -7,9 +7,19 @@ spec:
   type: tool-calling
   model: fast
   prompt: { name: vinnies/enrich, label: production }
-  input:  { record: $.record }
+  # The notes too: finding the household needs a name, which the case record
+  # deliberately leaves out.
+  input:  { record: $.record, notes: $.rawInput }
   tools:
     connection: vinnies
     allow: [find_household, get_assistance_history, get_assistance_guidelines, search_local_services]
+  # The context plan: lookups whose arguments the record already gives, made
+  # before the model is asked anything. Finding the household (and so its
+  # history) needs judgement, so the model does that part.
+  plan:
+    - { tool: get_assistance_guidelines, forEach: $.record.needs, with: { assistanceType: $item.category } }
+    - tool: search_local_services
+      forEach: $.record.needs
+      with: { needType: $item.category, suburb: $.record.household.suburb }
   output: { writeTo: context }
   limits: { maxIterations: 4, timeoutSeconds: 45 }

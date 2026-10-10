@@ -57,6 +57,23 @@
             "allow": { "type": "array", "minItems": 1, "items": { "type": "string" } }
           }
         },
+        "plan": {
+          "description": "Lookups made before the model runs: a fixed tool call per step (per item, with forEach), arguments from the case state.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tool"],
+            "properties": {
+              "tool": { "type": "string" },
+              "forEach": { "type": "string", "pattern": "^\\$\\." },
+              "with": {
+                "type": "object",
+                "additionalProperties": { "type": "string", "pattern": "^\\$(\\.|item\\.)" }
+              }
+            }
+          }
+        },
         "limits": {
           "type": "object",
           "additionalProperties": false,

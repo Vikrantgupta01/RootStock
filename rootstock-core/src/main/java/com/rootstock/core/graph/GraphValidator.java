@@ -162,6 +162,7 @@ public final class GraphValidator {
 							+ root + "'; known: " + channels));
 				}
 			});
+			plan(spec, file, channels, problems);
 			String projection = spec.output().projection();
 			if (projection != null) {
 				if (context.ontology() == null) {
@@ -183,6 +184,36 @@ public final class GraphValidator {
 						.anyMatch(n -> n.config().values().stream().anyMatch(v -> a.name().equals(v)));
 				if (!referenced) {
 					problems.add(new GraphProblem(file, "", "agent '" + a.name() + "' is not used by any node"));
+				}
+			}
+		}
+	}
+
+	/** A plan's tools must be among the agent's own, and its paths must read known channels. */
+	private static void plan(AgentDefinition.Spec spec, String file, Set<String> channels, List<GraphProblem> problems) {
+		List<String> allowed = spec.tools() == null ? List.of() : spec.tools().allow();
+		for (int i = 0; i < spec.plan().size(); i++) {
+			AgentDefinition.PlanStep step = spec.plan().get(i);
+			String at = "spec.plan[" + i + "]";
+			if (!allowed.contains(step.tool())) {
+				problems.add(new GraphProblem(file, at + ".tool", "tool '" + step.tool()
+						+ "' is not in the agent's tools.allow " + allowed));
+			}
+			List<String> paths = new ArrayList<>(step.with().values());
+			if (step.forEach() != null) {
+				paths.add(step.forEach());
+			}
+			for (String path : paths) {
+				if (path.startsWith("$item.")) {
+					if (step.forEach() == null) {
+						problems.add(new GraphProblem(file, at + ".with", "'" + path + "' reads $item, but the step has no forEach"));
+					}
+					continue;
+				}
+				String root = path.substring(2).split("\\.")[0];
+				if (!channels.contains(root)) {
+					problems.add(new GraphProblem(file, at, "'" + path + "' reads unknown state channel '" + root
+							+ "'; known: " + channels));
 				}
 			}
 		}

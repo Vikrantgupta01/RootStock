@@ -1,18 +1,5 @@
 import type { CaseRun } from '../api/cases'
-import { usePack } from '../hooks/useOntology'
-
-type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
-
-/** visitDate → Visit date */
-function label(key: string) {
-  const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}
-
-/** household.suburb → Household › suburb */
-function pathLabel(path: string) {
-  return path.split('.').map((part, i) => (i === 0 ? label(part) : label(part).toLowerCase())).join(' › ')
-}
+import { label, pathLabel, useDefinitions, type Json } from './caseValues'
 
 /**
  * The notes as submitted beside the record extracted from them. Codes are the
@@ -20,13 +7,7 @@ function pathLabel(path: string) {
  * not give is marked, because validate turns it into a question for the member.
  */
 export function NotesAndRecord({ run }: { run: CaseRun }) {
-  const pack = usePack(run.pack)
-  const definitions = new Map<string, string>()
-  for (const v of pack.data?.ontology?.vocabularies ?? []) {
-    for (const t of v.terms) {
-      if (t.definition && !definitions.has(t.code)) definitions.set(t.code, `${v.name}: ${t.definition}`)
-    }
-  }
+  const definitions = useDefinitions(run.pack)
   const issues = Array.isArray(run.result?.issues) ? (run.result.issues as Record<string, unknown>[]) : []
   const missing = new Set(issues.map((i) => i.path).filter((p): p is string => typeof p === 'string'))
   const record = (run.result?.record ?? null) as Json
@@ -65,11 +46,14 @@ interface ValueProps {
   path: string
   missing: Set<string>
   definitions: Map<string, string>
+  /** What an empty value says; "not in the notes" for an extracted record. */
+  absent?: string
 }
 
-function Value({ value, path, missing, definitions }: ValueProps) {
+/** Any JSON value as a readable field list; vocabulary codes explained on hover. */
+export function Value({ value, path, missing, definitions, absent = 'not in the notes' }: ValueProps) {
   if (value === null) {
-    return <span className={missing.has(path) ? 'record__gap record__gap--asked' : 'record__gap'}>not in the notes</span>
+    return <span className={missing.has(path) ? 'record__gap record__gap--asked' : 'record__gap'}>{absent}</span>
   }
   if (typeof value === 'boolean') return <span>{value ? 'yes' : 'no'}</span>
   if (typeof value === 'number') return <span>{value}</span>
@@ -84,7 +68,7 @@ function Value({ value, path, missing, definitions }: ValueProps) {
     if (value.every((v) => typeof v !== 'object' || v === null)) {
       return (
         <span className="record__codes">
-          {value.map((v, i) => <Value key={i} value={v} path={`${path}[${i}]`} missing={missing} definitions={definitions} />)}
+          {value.map((v, i) => <Value key={i} value={v} path={`${path}[${i}]`} missing={missing} definitions={definitions} absent={absent} />)}
         </span>
       )
     }
@@ -92,7 +76,7 @@ function Value({ value, path, missing, definitions }: ValueProps) {
       <ol className="record__items">
         {value.map((v, i) => (
           <li key={i}>
-            <Value value={v} path={`${path}[${i}]`} missing={missing} definitions={definitions} />
+            <Value value={v} path={`${path}[${i}]`} missing={missing} definitions={definitions} absent={absent} />
           </li>
         ))}
       </ol>
@@ -106,7 +90,7 @@ function Value({ value, path, missing, definitions }: ValueProps) {
           <div key={key} className={missing.has(at) ? 'record__field is-missing' : 'record__field'}>
             <dt>{label(key)}</dt>
             <dd>
-              <Value value={v} path={at} missing={missing} definitions={definitions} />
+              <Value value={v} path={at} missing={missing} definitions={definitions} absent={absent} />
             </dd>
           </div>
         )

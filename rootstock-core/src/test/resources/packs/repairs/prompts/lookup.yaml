@@ -1,0 +1,7 @@
+name: repairs/lookup
+type: chat
+prompt:
+  - role: system
+    content: "Find the property for this job. Today is {{today}}. Already looked up: {{lookups}}"
+  - role: user
+    content: "Job: {{record}}"

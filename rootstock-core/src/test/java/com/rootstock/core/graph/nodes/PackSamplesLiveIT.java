@@ -8,6 +8,7 @@ import com.rootstock.core.graph.CaseGraph;
 import com.rootstock.core.graph.CaseState;
 import com.rootstock.core.graph.GraphDefinition;
 import com.rootstock.core.graph.NodeContext;
+import com.rootstock.core.graph.NodeRegistry;
 import com.rootstock.core.graph.PackGraph;
 import com.rootstock.core.ontology.RequiredFields;
 import com.rootstock.core.ontology.ResolvedOntology;
@@ -36,14 +37,21 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
- * Runs every structured-extraction agent of the configured packs on its sample
- * inputs ({@code <pack>/samples/<agent>/*.yaml}) against the real model and
- * prompt, and checks the records. Tagged {@code live}: each sample is a Bedrock
- * call ({@code mvn verify -Dlive.excluded=none -Dgroups=live}).
+ * Runs the agents of the configured packs on their sample inputs
+ * ({@code <pack>/samples/<agent>/*.yaml}) against the real model, prompt and
+ * client system, and checks what they produce. Tagged {@code live}: each
+ * sample makes Bedrock calls ({@code mvn verify -Dlive.excluded=none -Dgroups=live}).
  *
- * <p>A sample file has {@code input} (the text submitted), {@code expect} (field
- * path to value; paths go through lists, a list value means exactly that set of
- * values) and {@code missing} (exactly the required fields the input lacks).
+ * <p>A structured-extraction sample has {@code input} (the text submitted),
+ * {@code expect} (field path to value; paths go through lists, a list value
+ * means exactly that set of values) and {@code missing} (exactly the required
+ * fields the input lacks).
+ *
+ * <p>A tool-calling sample has {@code input} and {@code record} (the state it
+ * starts from) and {@code expect}: {@code ok} (tools with a successful lookup),
+ * {@code notOk} (tools without one) and {@code arguments} ({@code tool.argument}
+ * to the value or values its successful lookups used). It needs the client
+ * system running.
  */
 @Tag("live")
 @SpringBootTest
@@ -57,7 +65,7 @@ class PackSamplesLiveIT {
 	PackRegistry packs;
 
 	@Autowired
-	StructuredExtraction extraction;
+	NodeRegistry registry;
 
 	@TestFactory
 	Stream<DynamicTest> everySampleIsExtractedAsExpected() throws IOException {
@@ -69,7 +77,7 @@ class PackSamplesLiveIT {
 			ResolvedOntology ontology = packs.ontology(pack.name()).orElseThrow();
 			for (GraphDefinition.NodeSpec node : definition.graph().nodes()) {
 				AgentDefinition agent = node.agent() == null ? null : definition.agents().get(node.agent());
-				if (agent == null || !agent.spec().type().equals(StructuredExtraction.TYPE)) {
+				if (agent == null || !List.of(StructuredExtraction.TYPE, ToolCallingAgent.TYPE).contains(agent.spec().type())) {
 					continue;
 				}
 				Path samples = Path.of(pack.location(), "samples", agent.name());
@@ -80,7 +88,14 @@ class PackSamplesLiveIT {
 				try (Stream<Path> files = Files.list(samples)) {
 					for (Path file : files.filter(f -> f.toString().endsWith(".yaml")).sorted().toList()) {
 						tests.add(DynamicTest.dynamicTest(pack.name() + "/" + agent.name() + "/" + file.getFileName(),
-								() -> check(context, ontology, file)));
+								() -> {
+									if (agent.spec().type().equals(ToolCallingAgent.TYPE)) {
+										checkLookups(context, file);
+									}
+									else {
+										check(context, ontology, file);
+									}
+								}));
 					}
 				}
 			}
@@ -91,8 +106,8 @@ class PackSamplesLiveIT {
 	@SuppressWarnings("unchecked")
 	private void check(NodeContext context, ResolvedOntology ontology, Path file) throws Exception {
 		Map<String, Object> sample = new Yaml(new SafeConstructor(new LoaderOptions())).load(Files.readString(file));
-		Map<String, Object> update = extraction.create(context).apply(new CaseState(Map.of(CaseState.CASE_ID,
-				"sample", CaseState.RAW_INPUT, sample.get("input"))));
+		Map<String, Object> update = registry.agent(StructuredExtraction.TYPE).orElseThrow().create(context)
+				.apply(new CaseState(Map.of(CaseState.CASE_ID, "sample", CaseState.RAW_INPUT, sample.get("input"))));
 		AgentDefinition.Output output = context.agent().spec().output();
 		Object record = update.get(output.writeTo());
 
@@ -114,6 +129,39 @@ class PackSamplesLiveIT {
 			wrong.add("missing: expected " + wantMissing + ", got " + gotMissing);
 		}
 		assertThat(wrong).as("%s\nrecord: %s", file.getFileName(), record).isEmpty();
+	}
+
+	@SuppressWarnings("unchecked")
+	private void checkLookups(NodeContext context, Path file) throws Exception {
+		Map<String, Object> sample = new Yaml(new SafeConstructor(new LoaderOptions())).load(Files.readString(file));
+		Map<String, Object> update = registry.agent(ToolCallingAgent.TYPE).orElseThrow().create(context)
+				.apply(new CaseState(Map.of(CaseState.CASE_ID, "sample", CaseState.RAW_INPUT, sample.get("input"),
+						"record", sample.get("record"))));
+		Map<String, Object> output = (Map<String, Object>) update.get(context.agent().spec().output().writeTo());
+		List<ToolCallingAgent.Lookup> lookups = (List<ToolCallingAgent.Lookup>) output.get("lookups");
+		List<ToolCallingAgent.Lookup> ok = lookups.stream().filter(l -> l.status().equals("OK")).toList();
+		Set<String> okTools = ok.stream().map(ToolCallingAgent.Lookup::tool).collect(Collectors.toSet());
+		Map<String, Object> expect = (Map<String, Object>) sample.getOrDefault("expect", Map.of());
+
+		List<String> wrong = new ArrayList<>();
+		((List<String>) expect.getOrDefault("ok", List.of())).stream().filter(t -> !okTools.contains(t))
+				.forEach(t -> wrong.add("no successful " + t));
+		((List<String>) expect.getOrDefault("notOk", List.of())).stream().filter(okTools::contains)
+				.forEach(t -> wrong.add("unexpected successful " + t));
+		((Map<String, Object>) expect.getOrDefault("arguments", Map.of())).forEach((key, expected) -> {
+			String[] parts = key.split("\\.", 2);
+			Set<String> want = (expected instanceof List<?> l ? l.stream() : Stream.of(expected)).map(PackSamplesLiveIT::text)
+					.collect(Collectors.toCollection(TreeSet::new));
+			Set<String> got = ok.stream().filter(l -> l.tool().equals(parts[0]))
+					.map(l -> text(l.arguments().get(parts[1]))).collect(Collectors.toCollection(TreeSet::new));
+			if (!want.equals(got)) {
+				wrong.add(key + ": expected " + want + ", got " + got);
+			}
+		});
+		assertThat(wrong).as("%s\nsummary: %s\nlookups: %s", file.getFileName(), output.get("summary"), lookups.stream()
+				.map(l -> l.source() + " " + l.tool() + " " + l.arguments() + " " + l.status()
+						+ (l.message() == null ? "" : " (" + l.message() + ")"))
+				.toList()).isEmpty();
 	}
 
 	/** Every non-null value at {@code path}, going through lists. */

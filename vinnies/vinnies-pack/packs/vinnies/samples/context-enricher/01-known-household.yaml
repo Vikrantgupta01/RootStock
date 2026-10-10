@@ -1,0 +1,17 @@
+# Linh Tran in Blacktown is one of the Vinnies demo data's hand-made households.
+input: |
+  Visit 6 Oct 2026, Blacktown. Saw Linh Tran and the kids at home.
+  Final disconnection notice from the power company, $612 owing. Fridge pretty bare too.
+record:
+  urgency: HIGH
+  riskFlags: [DISCONNECTION]
+  visitDate: "2026-10-06"
+  household: { suburb: Blacktown, adults: 2, children: 2 }
+  needs:
+    - { category: ENERGY_BILL, details: Final disconnection notice, $612 owing. }
+    - { category: FOOD, details: Fridge pretty bare. }
+expect:
+  ok: [find_household, get_assistance_history, get_assistance_guidelines, search_local_services]
+  arguments:
+    get_assistance_history.householdRef: HH-0001
+    get_assistance_guidelines.assistanceType: [ENERGY_BILL, FOOD]
