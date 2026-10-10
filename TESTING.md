@@ -34,6 +34,13 @@ without it that test is skipped.)
   `PackSnapshotTest` also checks each configured pack's `generated/` files.
   Refresh snapshots after an intended change with `-Dsnapshot.update=true`,
   then review the diff.
+- Graph tests (`core.graph`, `core.cases`) use the repairs pack's
+  `graph.yaml` and `agents/` in `src/test/resources/packs/repairs`: schema
+  errors with their location, every startup check (including the write-safety
+  rules), routing, reducers, and whole runs through the stub nodes down each
+  route. `ConfiguredPackGraphsTest` checks each configured pack's graph against
+  its own `tools.yaml`. `CaseControllerTest` runs real cases behind the API,
+  including the event stream.
 - **Integration tests** (`*IT`, `mvn verify`) start the whole app against RDS
   in a throwaway schema (`rootstock_test_<timestamp>_<id>`), created and
   Flyway-migrated for the run and dropped at the end (`ThrowawaySchemaConfig`).

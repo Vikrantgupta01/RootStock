@@ -1,0 +1,9 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata: { name: job-extractor }
+spec:
+  type: structured-extraction
+  model: extraction
+  prompt: { name: repairs/extract-job }
+  input:  { report: $.rawInput }
+  output: { projection: job-intake, writeTo: record }

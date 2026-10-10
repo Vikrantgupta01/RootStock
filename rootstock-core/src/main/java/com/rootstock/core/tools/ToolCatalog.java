@@ -54,6 +54,11 @@ public final class ToolCatalog {
 		return allowlists.keySet();
 	}
 
+	/** The only nodes where WRITE tools may be allowed. */
+	public Set<String> writeNodes() {
+		return Set.copyOf(writeNodes);
+	}
+
 	public List<ToolDefinition> tools() {
 		return tools.values().stream().sorted(Comparator.comparing(ToolDefinition::name)).toList();
 	}

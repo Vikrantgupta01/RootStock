@@ -15,6 +15,10 @@ Vinnies-specific lives here; `rootstock-core` never references this folder.
   `.env` loaded) and review the diff; never edit `generated/` by hand. In flow mappings
   (`{ ... }`), a description with a comma must move to block style, or the loader reports
   an unknown key.
+  `packs/vinnies/graph.yaml` and `packs/vinnies/agents/` define the case-intake graph.
+  Rootstock checks them at startup and won't start if they're broken or unsafe (for
+  example, a path to `commit` that skips `review`). An agent's tools must also be on its
+  node's allowlist in `tools.yaml`, and its projection must exist in `ontology.yaml`.
 
 All repo-wide rules in `../CLAUDE.md` apply. The rules below are specific to Vinnies.
 

@@ -1,0 +1,12 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata:
+  name: consistency-judge
+  description: Checks the record against the original notes; flags anything invented or missed.
+spec:
+  type: judge
+  model: extraction
+  prompt: { name: vinnies/judge, label: production }
+  input:  { notes: $.rawInput, record: $.record }
+  output: { writeTo: issues }
+  limits: { timeoutSeconds: 30 }

@@ -1,0 +1,15 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata:
+  name: context-enricher
+  description: Looks up the household, its history, the guidelines and local services.
+spec:
+  type: tool-calling
+  model: fast
+  prompt: { name: vinnies/enrich, label: production }
+  input:  { record: $.record }
+  tools:
+    connection: vinnies
+    allow: [find_household, get_assistance_history, get_assistance_guidelines, search_local_services]
+  output: { writeTo: context }
+  limits: { maxIterations: 4, timeoutSeconds: 45 }

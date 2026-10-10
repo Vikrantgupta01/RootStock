@@ -14,11 +14,19 @@ The Vinnies demo domain for Sinew Rootstock. **All data is fictional.**
     Rootstock and snapshot-tested. Never edit them by hand.
   - `tools.yaml`: the MCP connection, the tools, and which workflow step (node) may call
     which.
+  - `graph.yaml`: the case-intake graph. Visit notes go through ingest, extract, enrich
+    and validate, then to clarify (the member can answer), chase (only the household
+    can) or draft, then review by a coordinator, then commit. Rootstock refuses to start
+    if it's broken or unsafe.
+  - `agents/`: the six agents the graph uses (case-extractor, context-enricher,
+    consistency-judge, clarifier, action-drafter, chase-writer): their type, model
+    profile, Langfuse prompt, input and output.
 
   In `rootstock-core/.env`, point Rootstock at it with
   `ROOTSTOCK_PACKS_PATHS=<repo>/vinnies/vinnies-pack/packs` and
   `ROOTSTOCK_TOOLS_FILE=<repo>/vinnies/vinnies-pack/packs/vinnies/tools.yaml`.
-  The graph and agents join it in later iterations.
+  Until later iterations the graph's nodes are Rootstock stubs: the flow, pauses and
+  trace are real, the work isn't yet.
 
 `vinnies-mcp-server` is a dummy St Vincent de Paul (Vinnies) application. It plays the
 client's existing system, a stand-in for the system a real client already runs, and

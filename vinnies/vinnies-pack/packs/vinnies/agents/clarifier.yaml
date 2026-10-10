@@ -1,0 +1,12 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata:
+  name: clarifier
+  description: Writes short, specific questions to the member about what the notes leave out.
+spec:
+  type: drafter
+  model: fast
+  prompt: { name: vinnies/clarify, label: production }
+  input:  { issues: $.issues, record: $.record }
+  output: { writeTo: questions }
+  limits: { timeoutSeconds: 30 }

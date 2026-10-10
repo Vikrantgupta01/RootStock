@@ -1,0 +1,12 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata:
+  name: case-extractor
+  description: Turns a member's visit notes into the case record.
+spec:
+  type: structured-extraction
+  model: extraction
+  prompt: { name: vinnies/extract-case, label: production }
+  input:  { notes: $.rawInput }
+  output: { projection: case-extraction, writeTo: record }
+  limits: { timeoutSeconds: 30, retries: 2 }

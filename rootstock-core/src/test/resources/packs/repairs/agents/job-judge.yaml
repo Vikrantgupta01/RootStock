@@ -1,0 +1,4 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata: { name: job-judge }
+spec: { type: judge, input: { report: $.rawInput }, output: { writeTo: issues } }

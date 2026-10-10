@@ -1,0 +1,12 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata:
+  name: chase-writer
+  description: Drafts a short, respectful request to the household for missing details.
+spec:
+  type: drafter
+  model: drafting
+  prompt: { name: vinnies/draft-chase, label: production }
+  input:  { record: $.record, issues: $.issues }
+  output: { writeTo: actions }
+  limits: { timeoutSeconds: 30 }

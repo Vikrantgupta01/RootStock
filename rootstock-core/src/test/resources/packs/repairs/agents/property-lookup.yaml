@@ -1,0 +1,10 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata: { name: property-lookup }
+spec:
+  type: tool-calling
+  model: fast
+  input:  { record: $.record }
+  tools: { connection: landlord, allow: [find_property, list_contractors] }
+  output: { writeTo: context }
+  limits: { maxIterations: 3 }

@@ -36,6 +36,7 @@ public class RequestTrace {
 	public static final String SURFACE_RAG = "rag";
 	public static final String SURFACE_AGENT = "agent";
 	public static final String SURFACE_TOOLS = "tools";
+	public static final String SURFACE_CASES = "cases";
 
 	private final ObservationRegistry registry;
 	private final String environment;
@@ -61,7 +62,7 @@ public class RequestTrace {
 	 * @param name    verb-first and free of ids, e.g. {@code answer-question} --
 	 *                names are referenced by Langfuse filters and dashboards, so a
 	 *                name containing a UUID makes every trace its own category
-	 * @param surface {@link #SURFACE_CHAT}, {@link #SURFACE_RAG}, {@link #SURFACE_AGENT} or {@link #SURFACE_TOOLS}
+	 * @param surface {@link #SURFACE_CHAT}, {@link #SURFACE_RAG}, {@link #SURFACE_AGENT}, {@link #SURFACE_TOOLS} or {@link #SURFACE_CASES}
 	 */
 	public Observation start(String name, String surface, UUID conversationId) {
 		Observation observation = Observation.createNotStarted(name, registry);

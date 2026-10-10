@@ -1,0 +1,12 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata:
+  name: action-drafter
+  description: Proposes the assistance, referrals and follow-up for the coordinator to review.
+spec:
+  type: drafter
+  model: drafting
+  prompt: { name: vinnies/draft-actions, label: production }
+  input:  { record: $.record, context: $.context }
+  output: { writeTo: actions }
+  limits: { timeoutSeconds: 30 }

@@ -1,0 +1,79 @@
+  # The Vinnies case-intake graph: how a member's visit notes become an approved
+# case. Rootstock compiles this into a LangGraph4j graph at startup and refuses
+# to start if it is broken or unsafe (see rootstock-core's GraphValidator).
+# Node and agent types are Rootstock's building blocks; until later iterations
+# they are stubs that do no real work.
+apiVersion: rootstock/v1
+kind: Graph
+metadata:
+  name: case-intake
+  version: 1.0.0
+  pack: vinnies
+  description: Visit notes in, an approved assistance case out.
+
+state:
+  channels:
+    record:    { reducer: replace, description: The case record extracted from the notes. }
+    context:   { reducer: merge, description: What enrich looked up in the Vinnies system. }
+    # Replace, not append: each validate pass recomputes every issue, so one
+    # fixed in a clarify round must disappear. Their history is in the audit.
+    issues:    { reducer: replace, description: Problems found by validate. }
+    questions: { reducer: replace, description: Questions clarify asks the member. }
+    actions:   { reducer: append, description: Proposed changes for review. }
+    audit:     { reducer: append, description: What each node did. }
+
+nodes:
+  - { id: ingest,  type: ingest }
+  - { id: extract, agent: case-extractor }
+  - { id: enrich,  agent: context-enricher }
+  - id: validate
+    type: rules
+    config: { judge: consistency-judge }
+  - id: clarify
+    type: clarify
+    config: { questionWriter: clarifier, maxRounds: 2 }
+  - id: draft
+    agent: action-drafter
+    config: { actionType: ASSISTANCE }
+  - id: chase
+    agent: chase-writer
+    config: { actionType: CHASE_MESSAGE }
+  - id: review
+    type: human-review
+    config: { approverRoles: [coordinator] }
+  - id: commit
+    type: tool-executor
+    config: { allowWrites: true }
+  - { id: await_input, type: await-input }
+
+edges:
+  - { from: START,   to: ingest }
+  - { from: ingest,  to: extract }
+  - { from: extract, to: enrich }
+  - { from: enrich,  to: validate }
+  - from: validate
+    route:
+      # A blocking issue the member who wrote the notes can answer: ask them.
+      - { when: { issues.anySeverity: BLOCKING, issues.answerableBy: SUBMITTER }, to: clarify }
+      # Any other blocking issue: only the household (or another party) can answer.
+      - { when: { issues.anySeverity: BLOCKING }, to: chase }
+      - { default: draft }
+  - { from: clarify, to: extract }
+  - { from: draft,   to: review }
+  - { from: chase,   to: review }
+  - from: review
+    route:
+      - { when: { review.decision: APPROVED }, to: commit }
+      - { when: { review.decision: EDITED },   to: validate }
+      - { default: END }
+  - from: commit
+    route:
+      - { when: { actions.includesType: CHASE_MESSAGE }, to: await_input }
+      - { default: END }
+  - { from: await_input, to: extract }
+
+runtime:
+  checkpointer: memory          # postgres from Iteration 9, so paused cases survive a restart
+  interruptAfter:  [clarify]    # questions asked: wait for the member's answers
+  interruptBefore: [review, await_input]   # a coordinator approves; parked until new information
+  maxSteps: 40

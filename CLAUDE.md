@@ -54,7 +54,7 @@ class is in one of the three, and that nothing in `src/main` mentions Vinnies.
 
 | Package | Holds |
 |---|---|
-| `core` | Domain and logic: agent graph, RAG, conversations, tools, ontology, packs. It imports neither `autoconfig` nor `runtime`. |
+| `core` | Domain and logic: agent graph, RAG, conversations, tools, ontology, packs, the case graph engine. It imports neither `autoconfig` nor `runtime`. |
 | `autoconfig` | Spring wiring: `@Configuration`, `@ConfigurationProperties`, bean definitions that assemble `core`. |
 | `runtime` | The running application: controllers, security filters, tracing aspects, platform status. |
 
@@ -71,7 +71,16 @@ covers all three layers; it is the only class outside them.
 - Schemas and glossaries are **generated** from the ontology, never written by hand.
   A pack's `generated/` files are snapshot-tested by `PackSnapshotTest`; after an intended
   change run `mvn test -Dtest=PackSnapshotTest -Dsnapshot.update=true` and review the diff.
-- A broken pack must never stop Rootstock: it is listed INVALID with its problems.
+- A broken **ontology** must never stop Rootstock: the pack is listed INVALID with its
+  problems. A broken or unsafe **graph or agent** does stop startup (`GraphValidator`): it
+  decides what happens to a case and when Rootstock may write.
+- `graph.yaml` and `agents/` are checked against the JSON Schemas in
+  `src/main/resources/schemas/`; change a schema and the loader together.
+- Node and agent types are Rootstock building blocks (`NodeFactory`); YAML only combines
+  them. They are stubs (`core.graph.stub.StubNodes`) until each gets a real implementation,
+  registered as a `NodeFactory` bean of the same type. Routing conditions are a fixed set
+  with no expressions; anything more is a named `CaseRouter` bean.
+- Everything a node writes into state must be `Serializable` (the checkpointer copies it).
 
 ## Not yet compliant
 

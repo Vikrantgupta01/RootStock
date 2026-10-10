@@ -38,7 +38,7 @@ dependencies point inwards only (`runtime → autoconfig → core`, enforced by
 
 | Package | Holds |
 |---|---|
-| `core` | Domain and logic: agent graph, RAG, conversations, tools, ontology, packs |
+| `core` | Domain and logic: agent graph, RAG, conversations, tools, ontology, packs, case graph engine |
 | `autoconfig` | Spring wiring: `@Configuration`, properties, beans that assemble `core` |
 | `runtime` | The running app: controllers, security filters, tracing aspects, status |
 
@@ -124,6 +124,7 @@ Backend config lives in `rootstock-core/src/main/resources/application.yml`. Key
 | `management.tracing.sampling.probability` | `LANGFUSE_SAMPLE_RATE` | `1.0` |
 | `rootstock.observability.langfuse.environment` | `LANGFUSE_ENVIRONMENT` | `development` |
 | `spring.config.import` (`rootstock.tools.*`) | `ROOTSTOCK_TOOLS_FILE` | _(unset: no client systems)_ path to a domain pack's `tools.yaml` |
+| `rootstock.cases.stub-pause` | `CASES_STUB_PAUSE` | `600ms` (how long each stub node takes, so progress is visible) |
 | `rootstock.packs.paths` | `ROOTSTOCK_PACKS_PATHS` | _(unset: no packs)_ comma-separated folders of domain packs, e.g. `vinnies/vinnies-pack/packs` |
 | `rootstock.cors.allowed-origins` | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` |
 
@@ -469,6 +470,50 @@ projections, with the generated schema and glossary side by side. Admins can
 glossary in `generated/`; `PackSnapshotTest` fails when they no longer match its
 ontology. After an intended change, regenerate them and review the diff:
 `mvn test -Dtest=PackSnapshotTest -Dsnapshot.update=true` (with `.env` loaded).
+
+## Case graph (YAML, compiled to LangGraph4j)
+
+A pack's **`graph.yaml`** says how a case moves through Rootstock: the state
+channels, the nodes, the edges and where a run pauses. Its **`agents/*.yaml`**
+configure the agent nodes (type, model profile, Langfuse prompt, input,
+output projection, tools). At startup Rootstock checks both files against
+JSON Schemas (`rootstock-core/src/main/resources/schemas/`) and compiles the
+graph into LangGraph4j (`core.graph.GraphCompiler`).
+
+- **State channels** have a reducer: `replace`, `merge` (maps) or `append`
+  (lists). Everything a node puts in state must be `Serializable`: the
+  checkpointer copies state that way.
+- **Nodes** are Rootstock building blocks: node types (`ingest`, `rules`,
+  `clarify`, `human-review`, `tool-executor`, `await-input`) or agents whose
+  type is `structured-extraction`, `tool-calling`, `judge` or `drafter`. **All
+  are stubs for now** (`core.graph.stub.StubNodes`): they record what they would
+  do in the `audit` channel and never call a model or a client system. Real
+  implementations replace them type by type.
+- **Routes** use a small fixed condition set, never code:
+  `issues.anySeverity: BLOCKING`, `issues.answerableBy: SUBMITTER` (both on the
+  same issue), `actions.includesType: CHASE_MESSAGE`, `review.decision: APPROVED`,
+  `<list>.countAbove: n`, `<field>.exists: true`. Anything more complex is a
+  named Java `CaseRouter` bean: `{ from: x, router: name, targets: [a, b] }`.
+- **Checked at startup; a broken graph stops the app**, with every problem
+  and where it is. Beyond references and reachability, the safety rules are:
+  only a `tool-executor` node may set `allowWrites`; every path from START to a
+  writing node passes a `human-review` node the run pauses before; an agent's
+  tools exist, are read-only, and are on its node's allowlist in `tools.yaml`;
+  an agent's output projection exists in the pack's ontology.
+- **Runs** are in memory for now (the in-memory checkpointer, last 200 runs):
+  a paused run doesn't survive a restart, and resuming arrives with review
+  (Iteration 9).
+
+**Cases screen** (`/cases`): submit visit notes and watch each node light up
+as the run goes, until it pauses (before review, or after clarify) or ends. It
+shows the event log, the issues, actions and audit trail the stubs produced,
+and a link to the run's Langfuse trace: one `process-case` trace per run, with
+the case id as the session and a `node-<id>` span per node. A **Simulate**
+option drives the stubs down the clarify or chase route until real validation
+exists. Endpoints: `POST /api/cases` `{input, simulate?}` (starts a run,
+returns at once), `GET /api/cases` (your cases; all for an admin),
+`GET /api/cases/{id}`, `GET /api/cases/{id}/events` (server-sent events: every
+event so far, then each new one), `GET /api/cases/graph`.
 
 ## Platform status
 

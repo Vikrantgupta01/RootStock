@@ -40,6 +40,40 @@ export async function request<T>(path: string, init: RequestInit = {}, opts: Opt
   return (await res.json()) as T
 }
 
+/**
+ * Opens a server-sent event stream with the session's token (EventSource can't
+ * send one) and calls onEvent with each event's parsed JSON data. Resolves when
+ * the server closes the stream; abort the signal to stop early.
+ */
+export async function streamEvents<T>(path: string, onEvent: (event: T) => void, signal: AbortSignal): Promise<void> {
+  const init: RequestInit = { headers: { Accept: 'text/event-stream' }, signal }
+  let res = await send(path, init, true)
+  if (res.status === 401 && (await refreshOnce())) {
+    res = await send(path, init, true)
+  }
+  if (!res.ok || !res.body) {
+    throw await toApiError(res)
+  }
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) return
+    buffer += value
+    let end: number
+    while ((end = buffer.indexOf('\n\n')) >= 0) {
+      const block = buffer.slice(0, end)
+      buffer = buffer.slice(end + 2)
+      const data = block
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).replace(/^ /, ''))
+        .join('\n')
+      if (data) onEvent(JSON.parse(data) as T)
+    }
+  }
+}
+
 function send(path: string, init: RequestInit, authenticated: boolean): Promise<Response> {
   const headers = new Headers(init.headers)
   if (init.body !== undefined && !headers.has('Content-Type')) {

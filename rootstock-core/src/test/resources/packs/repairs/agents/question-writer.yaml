@@ -1,0 +1,4 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata: { name: question-writer }
+spec: { type: drafter, output: { writeTo: questions } }

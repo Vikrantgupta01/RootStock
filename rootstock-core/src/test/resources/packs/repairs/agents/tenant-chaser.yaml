@@ -1,0 +1,4 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata: { name: tenant-chaser }
+spec: { type: drafter, output: { writeTo: actions } }

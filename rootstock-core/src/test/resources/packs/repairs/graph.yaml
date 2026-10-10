@@ -1,0 +1,74 @@
+apiVersion: rootstock/v1
+kind: Graph
+metadata:
+  name: job-intake
+  version: 1.0.0
+  pack: repairs
+  description: A tenant report in, an approved repair job out.
+
+state:
+  channels:
+    record:    { reducer: replace, description: The job record extracted from the report. }
+    context:   { reducer: merge, description: What enrich looked up in the landlord system. }
+    # Replace, not append: each validate pass recomputes every issue, so one
+    # fixed in a clarify round must disappear. Their history is in the audit.
+    issues:    { reducer: replace, description: Problems found by validate. }
+    questions: { reducer: replace, description: Questions clarify asks the tenant. }
+    actions:   { reducer: append, description: Proposed changes for review. }
+    audit:     { reducer: append, description: What each node did. }
+
+nodes:
+  - { id: ingest,  type: ingest }
+  - { id: extract, agent: job-extractor }
+  - { id: enrich,  agent: property-lookup }
+  - id: validate
+    type: rules
+    config: { judge: job-judge }
+  - id: clarify
+    type: clarify
+    config: { questionWriter: question-writer, maxRounds: 2 }
+  - id: draft
+    agent: visit-planner
+    config: { actionType: VISIT }
+  - id: chase
+    agent: tenant-chaser
+    config: { actionType: CHASE_MESSAGE }
+  - id: review
+    type: human-review
+    config: { approverRoles: [property-manager] }
+  - id: commit
+    type: tool-executor
+    config: { allowWrites: true }
+  - { id: await_input, type: await-input }
+
+edges:
+  - { from: START,   to: ingest }
+  - { from: ingest,  to: extract }
+  - { from: extract, to: enrich }
+  - { from: enrich,  to: validate }
+  - from: validate
+    route:
+      # A blocking issue the tenant who reported it can answer: ask them.
+      - { when: { issues.anySeverity: BLOCKING, issues.answerableBy: SUBMITTER }, to: clarify }
+      # Any other blocking issue: only someone else can answer.
+      - { when: { issues.anySeverity: BLOCKING }, to: chase }
+      - { default: draft }
+  - { from: clarify, to: extract }
+  - { from: draft,   to: review }
+  - { from: chase,   to: review }
+  - from: review
+    route:
+      - { when: { review.decision: APPROVED }, to: commit }
+      - { when: { review.decision: EDITED },   to: validate }
+      - { default: END }
+  - from: commit
+    route:
+      - { when: { actions.includesType: CHASE_MESSAGE }, to: await_input }
+      - { default: END }
+  - { from: await_input, to: extract }
+
+runtime:
+  checkpointer: memory          # postgres from Iteration 9, so paused cases survive a restart
+  interruptAfter:  [clarify]    # questions asked: wait for the tenant's answers
+  interruptBefore: [review, await_input]   # a coordinator approves; parked until new information
+  maxSteps: 40

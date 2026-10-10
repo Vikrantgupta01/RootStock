@@ -1,0 +1,88 @@
+# A small made-up domain (property repairs) used to test the ontology tools
+# without depending on any real domain pack.
+apiVersion: rootstock/v1
+kind: Ontology
+metadata:
+  name: repairs
+  version: 0.1.0
+  extends: rootstock-core
+  description: Tenant repair requests.
+
+entities:
+  Job:
+    extends: core.Case
+    description: A repair job opened from a tenant's report.
+    attributes:
+      priority: { vocab: Priority, required: true }
+      hazards: { vocab: Hazard, many: true }
+      reportedOn: { type: date, required: true }
+    relations:
+      reportedBy: { to: Tenant, required: true, field: tenant }
+      finds:
+        to: Defect
+        many: true
+        min: 1
+        field: defects
+      books: { to: Visit, many: true, field: visits }
+      atProperty: { to: Property, required: true, field: property }
+  Tenant:
+    extends: core.Party
+    description: The person who reported the problem.
+    attributes:
+      name: { type: string, required: true, pii: true }
+      phone: { type: string, pii: true }
+  Property:
+    extends: core.Party
+    description: A rented home, already on the landlord's books.
+  Defect:
+    extends: core.Request
+    description: One thing that needs fixing.
+    attributes:
+      trade: { vocab: Trade, required: true }
+      room: { type: string }
+  Visit:
+    extends: core.Action
+    description: A tradesperson's visit to fix defects.
+    attributes:
+      trade: { vocab: Trade, required: true }
+      estimateAud: { type: decimal, min: 0, max: 10000 }
+    relations:
+      fixes: { to: Defect }
+      by: { to: Contractor, required: true, field: contractor }
+  Contractor:
+    extends: core.Party
+    description: A trade business on the approved list.
+
+vocabularies:
+  Trade:
+    description: The kind of tradesperson a defect needs.
+    PLUMBING:
+      definition: Water, taps, toilets, drains and hot water.
+      synonyms: [leak, blocked drain, no hot water]
+    ELECTRICAL:
+      definition: Power points, lights, switchboard.
+      synonyms: [sparks, power out]
+  Priority:
+    LOW: { definition: Can wait for a routine visit. }
+    URGENT: { definition: Risk to safety or the home within 24 hours. }
+  Hazard:
+    FLOODING: { definition: Water is spreading, synonyms: [water everywhere] }
+    EXPOSED_WIRING: { definition: Live wires can be touched }
+
+constraints:
+  - id: hazards-are-urgent
+    description: A job with any hazard is urgent.
+    when: { Job.hazards: notEmpty }
+    require: { Job.priority: URGENT }
+
+projections:
+  job-intake:
+    description: What the intake agent extracts from a tenant's message.
+    root: Job
+    embed: [Tenant, Defect, Visit]
+    reference: [Property, Contractor]
+  dispatch-view:
+    root: Job
+    embed: [Defect]
+    include: [priority, defects.trade]
+    reference: [Property]

@@ -1,0 +1,4 @@
+apiVersion: rootstock/v1
+kind: Agent
+metadata: { name: visit-planner }
+spec: { type: drafter, input: { record: $.record }, output: { writeTo: actions } }
