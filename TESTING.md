@@ -7,12 +7,16 @@ setup, layout, and configuration reference.
 ## 1. Automated tests
 
 ```bash
-cd rootstock-core && mvn test             # unit + controller slice tests
-cd frontend && npm run build && npm run lint
+cd rootstock-core
+set -a && source .env && set +a
+mvn test                                        # unit, controller slice, architecture tests
+mvn verify                                      # + integration tests on a throwaway RDS schema
+mvn verify -Dlive.excluded=none -Dgroups=live   # only the tests that call Bedrock
+cd ../frontend && npm run build && npm run lint
 ```
 
-The automated suite needs neither a database nor AWS: nothing in it connects
-to anything.
+`mvn test` needs neither a database nor AWS: nothing in it connects to
+anything.
 
 - Controller slice tests (`*ControllerTest`) run with the security filter chain
   switched off (`addFilters = false`): it isn't in a `@WebMvcTest` context, and
@@ -20,11 +24,16 @@ to anything.
   enforce.
 - `AgentGraphTest` and `AgentToolsTest` drive the agent against a scripted chat
   model and mocked knowledge-base dependencies.
-- **There are no integration tests right now.** The Testcontainers-based ones
-  were removed along with Docker. When they come back they'll run against a
-  throwaway schema in RDS (see `CLAUDE.md`). Until then, the database,
-  Cognito, permission and Bedrock paths are covered only by the manual
-  walkthrough below.
+- `ArchitectureTest` (ArchUnit) enforces the layers: `core` never depends on
+  `autoconfig` or `runtime`, `autoconfig` never on `runtime`, and nothing in
+  `src/main` names a demo domain.
+- **Integration tests** (`*IT`, `mvn verify`) start the whole app against RDS
+  in a throwaway schema (`rootstock_test_<timestamp>_<id>`), created and
+  Flyway-migrated for the run and dropped at the end (`ThrowawaySchemaConfig`).
+  `ThrowawaySchemaIT` checks the app really runs in that schema. A killed run
+  can leave a schema behind: `DROP SCHEMA <name> CASCADE`.
+- **Live tests** (`@Tag("live")`) call Bedrock, so they're excluded unless
+  asked for. `BedrockChatLiveIT` makes one real model call.
 
 ## 2. One-time AWS setup (required — there's no offline mode)
 

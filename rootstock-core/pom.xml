@@ -31,6 +31,10 @@
 		<spring-ai.version>2.0.1</spring-ai.version>
 		<aws-sdk.version>2.51.2</aws-sdk.version>
 		<langgraph4j.version>1.9.3</langgraph4j.version>
+		<archunit.version>1.5.1</archunit.version>
+		<!-- Tests that call Bedrock are tagged "live" and skipped by default (they cost
+		     money). Run them on demand: mvn verify -Dlive.excluded=none -Dgroups=live -->
+		<live.excluded>live</live.excluded>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -180,6 +184,13 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
+			<!-- Architecture rules: core / autoconfig / runtime, and no domain code (CLAUDE.md). -->
+			<groupId>com.tngtech.archunit</groupId>
+			<artifactId>archunit-junit5</artifactId>
+			<version>${archunit.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
 			<!-- MockMvc post-processors for authenticating a request as a given JWT. -->
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security-oauth2-resource-server-test</artifactId>
@@ -217,6 +228,23 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<excludedGroups>${live.excluded}</excludedGroups>
+				</configuration>
+			</plugin>
+			<plugin>
+				<!-- Integration tests (*IT) run against RDS in a throwaway schema, in `mvn
+				     verify` after the unit tests; `mvn test` needs no AWS. Executions are
+				     configured by spring-boot-starter-parent. -->
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<configuration>
+					<excludedGroups>${live.excluded}</excludedGroups>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>

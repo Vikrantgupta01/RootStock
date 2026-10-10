@@ -31,6 +31,18 @@ RootStock/
 └── docs/design.md    Sinew Rootstock design and iteration plan
 ```
 
+Inside `rootstock-core`, code is in three layers under `com.rootstock`, and
+dependencies point inwards only (`runtime → autoconfig → core`, enforced by
+`ArchitectureTest` with ArchUnit):
+
+| Package | Holds |
+|---|---|
+| `core` | Domain and logic: agent graph, RAG, conversations, tools |
+| `autoconfig` | Spring wiring: `@Configuration`, properties, beans that assemble `core` |
+| `runtime` | The running app: controllers, security filters, tracing aspects, status |
+
+`RootStockApplication` stays at `com.rootstock` so component scanning covers all three.
+
 ## Prerequisites
 
 | Tool | Version | Notes |
@@ -96,8 +108,8 @@ Backend config lives in `rootstock-core/src/main/resources/application.yml`. Key
 
 | Property | Env var | Default |
 |---|---|---|
-| `spring.datasource.url` | `DB_URL` | `jdbc:postgresql://localhost:5432/rootstock` |
-| `spring.datasource.username` / `.password` | `DB_USERNAME` / `DB_PASSWORD` | `rootstock` / `rootstock` |
+| `spring.datasource.url` | `DB_URL` | _(required: no local default)_ |
+| `spring.datasource.username` / `.password` | `DB_USERNAME` / `DB_PASSWORD` | _(required)_ |
 | `spring.ai.bedrock.aws.region` | `AWS_REGION` | `us-east-1` |
 | `spring.ai.bedrock.converse.chat.options.model` | `BEDROCK_MODEL` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` |
 | `rootstock.rag.bedrock.knowledge-base-id` | `RAG_BEDROCK_KB_ID` | _(your Knowledge Base id)_ |
@@ -109,6 +121,7 @@ Backend config lives in `rootstock-core/src/main/resources/application.yml`. Key
 | `rootstock.observability.langfuse.host` | `LANGFUSE_HOST` / `LANGFUSE_BASE_URL` | `https://us.cloud.langfuse.com` |
 | `rootstock.observability.langfuse.public-key` / `.secret-key` | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | _(blank — keep in `.env`)_ |
 | `management.tracing.sampling.probability` | `LANGFUSE_SAMPLE_RATE` | `1.0` |
+| `rootstock.observability.langfuse.environment` | `LANGFUSE_ENVIRONMENT` | `development` |
 | `spring.config.import` (`rootstock.tools.*`) | `ROOTSTOCK_TOOLS_FILE` | _(unset: no client systems)_ path to a domain pack's `tools.yaml` |
 | `rootstock.cors.allowed-origins` | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` |
 
@@ -233,7 +246,7 @@ typed; only retrieval uses the rewrite.
 agent. Instead of a fixed pipeline, the model decides what to do next: call a
 tool, read the result, then call another or answer. The loop is an explicit
 [LangGraph4j](https://github.com/langgraph4j/langgraph4j) state graph
-(`com.rootstock.agent.AgentGraph`):
+(`com.rootstock.core.agent.AgentGraph`):
 
 ```
 START → agent (Reason) ──asks for tools?──yes→ tools (Act + Observe) ─┐
@@ -409,6 +422,16 @@ and each tool as the client system describes it; `POST /api/tools/call` takes
 `{node, tool, arguments, caseId?}` and returns the result with a Langfuse trace
 link. The acting user is always the signed-in user.
 
+## Platform status
+
+`/status` (any signed-in user) checks, on demand, every service Rootstock
+depends on with a real round trip: **Bedrock** (a one-word model call),
+**RDS** (a query, plus the latest Flyway migration), **Cognito** (the pool's
+signing keys), **Langfuse** (the keys, plus a link to the latest trace) and
+each **MCP connection** (its tool list). The checks run in parallel, each with
+a 15-second limit, so one slow service turns red instead of hanging the page.
+`GET /api/status` returns the same as JSON.
+
 ## Observability (Langfuse)
 
 LLM work is traced to [Langfuse](https://langfuse.com) over OpenTelemetry (OTLP
@@ -416,7 +439,7 @@ over HTTP). Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in
 `rootstock-core/.env`. Without both keys, OpenTelemetry stays switched off
 entirely, so a key-less environment exports nothing and logs nothing.
 
-All tracing lives in `com.rootstock.observability.TracingAspect`, as aspects, so
+All tracing lives in `com.rootstock.runtime.observability.TracingAspect`, as aspects, so
 the traced code doesn't know it's traced. One trace per request:
 
 | Trace | Contains |
@@ -465,14 +488,27 @@ Agent follow-ups worth doing:
 ## Tests
 
 ```bash
-cd rootstock-core && mvn test       # unit + controller slice tests; no database or AWS needed
-cd frontend && npm run build && npm run lint
+cd rootstock-core
+set -a && source .env && set +a
+mvn test                                        # unit, controller slice, architecture tests; no database or AWS
+mvn verify                                      # + integration tests (*IT) on a throwaway RDS schema
+mvn verify -Dlive.excluded=none -Dgroups=live   # only the tests that call Bedrock (tagged live)
+cd ../frontend && npm run build && npm run lint
 ```
 
+- **Integration tests** (`*IT`, run by `mvn verify`) start the app against
+  RDS in a schema of their own, `rootstock_test_<timestamp>_<id>`, which Flyway
+  migrates and the run drops afterwards (`ThrowawaySchemaConfig`). They never
+  touch the application's schema. A killed run can leave one behind; drop it by
+  hand (`DROP SCHEMA <name> CASCADE`).
+- **Live tests** call Bedrock, so they cost money: they're tagged `live` and
+  excluded unless asked for, as above.
+- **Architecture** (`ArchitectureTest`): `core` doesn't depend on `autoconfig`
+  or `runtime`, `autoconfig` not on `runtime`, every class is in a layer, and
+  nothing in `src/main` mentions a demo domain.
+
 See **[TESTING.md](TESTING.md)** for what each suite covers and a full manual
-walkthrough (API + UI) of the Customer and RAG features. There are no
-integration tests at the moment; they were removed with Docker and will
-return on a throwaway RDS schema. The agent's graph
+walkthrough (API + UI) of the Customer and RAG features. The agent's graph
 (`AgentGraphTest`) is tested against a scripted model — the Reason/Act/Observe
 loop, the iteration cap, unknown tools, and that the trace context reaches the
 worker thread.

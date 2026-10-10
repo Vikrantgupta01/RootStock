@@ -1,0 +1,57 @@
+/* Platform status --------------------------------------------------------- */
+
+.status__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.status__card {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  min-width: 0;
+}
+
+.status__card--ok {
+  border-left-color: var(--up);
+}
+
+.status__card--down {
+  border-left-color: var(--down);
+}
+
+.status__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.status__name {
+  font-weight: 600;
+}
+
+.status__state--ok {
+  color: var(--up);
+}
+
+.status__state--down {
+  color: var(--down);
+}
+
+.status__detail {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.status__meta {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}

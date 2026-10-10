@@ -11,9 +11,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.rootstock.auth.AuthContext;
-import com.rootstock.auth.UserRole;
-import com.rootstock.common.GlobalExceptionHandler;
+import com.rootstock.core.auth.AuthContext;
+import com.rootstock.core.auth.UserRole;
+import com.rootstock.runtime.common.GlobalExceptionHandler;
 import com.rootstock.core.tools.ToolAccess;
 import com.rootstock.core.tools.ToolCallContext;
 import com.rootstock.core.tools.ToolCallResult;

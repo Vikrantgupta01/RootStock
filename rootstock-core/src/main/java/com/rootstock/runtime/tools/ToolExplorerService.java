@@ -4,7 +4,7 @@ import com.rootstock.autoconfig.mcp.McpConnections;
 import com.rootstock.core.tools.ToolAccess;
 import com.rootstock.core.tools.ToolCatalog;
 import com.rootstock.core.tools.ToolDefinition;
-import com.rootstock.observability.LangfuseLinks;
+import com.rootstock.runtime.observability.LangfuseLinks;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import io.modelcontextprotocol.spec.McpSchema;

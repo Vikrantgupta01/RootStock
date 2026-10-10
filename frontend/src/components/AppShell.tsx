@@ -36,6 +36,9 @@ export function AppShell({ children, wide = false }: { children: ReactNode; wide
                 Tools
               </NavLink>
             )}
+            <NavLink to="/status" className={({ isActive }) => (isActive ? 'is-active' : '')}>
+              Status
+            </NavLink>
           </nav>
           <div className="appbar__side">
             <HealthBadge />

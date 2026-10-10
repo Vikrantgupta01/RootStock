@@ -13,9 +13,11 @@ spring:
       max-request-size: 26MB
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/rootstock}
-    username: ${DB_USERNAME:rootstock}
-    password: ${DB_PASSWORD:rootstock}
+    # No local defaults: without DB_* (from .env) the app refuses to start, rather
+    # than quietly connecting to some other database on localhost.
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
 
   jpa:
     hibernate:
@@ -131,6 +133,9 @@ rootstock:
       # host because that is the name langfuse-cli uses, so a .env written for
       # the CLI works unchanged.
       host: ${LANGFUSE_HOST:${LANGFUSE_BASE_URL:https://us.cloud.langfuse.com}}
+      # Langfuse environment on every trace, keeping local traffic out of
+      # production dashboards. A setting, not a Spring profile (one configuration).
+      environment: ${LANGFUSE_ENVIRONMENT:development}
       public-key: ${LANGFUSE_PUBLIC_KEY:}
       secret-key: ${LANGFUSE_SECRET_KEY:}
   cors:

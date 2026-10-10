@@ -2,4 +2,4 @@
 # Must be an EnvironmentPostProcessor rather than a bean: Boot decides whether to
 # create an OTLP exporter at all from a property, long before any bean exists.
 org.springframework.boot.EnvironmentPostProcessor=\
-com.rootstock.observability.LangfuseEnvironmentPostProcessor
+com.rootstock.autoconfig.observability.LangfuseEnvironmentPostProcessor

@@ -1,6 +1,6 @@
 package com.rootstock.runtime.tools;
 
-import com.rootstock.auth.AuthContext;
+import com.rootstock.core.auth.AuthContext;
 import com.rootstock.core.tools.ToolCallContext;
 import com.rootstock.core.tools.ToolCallResult;
 import com.rootstock.core.tools.ToolGateway;

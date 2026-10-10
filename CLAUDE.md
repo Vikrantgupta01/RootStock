@@ -48,30 +48,27 @@ Do not change these without explicit approval.
 
 ## Package plan
 
-Target layout under `com.rootstock`. Dependencies point inwards only:
-`runtime → autoconfig → core`.
+Layout under `com.rootstock`. Dependencies point inwards only:
+`runtime → autoconfig → core`. `ArchitectureTest` (ArchUnit) enforces this, that every
+class is in one of the three, and that nothing in `src/main` mentions Vinnies.
 
 | Package | Holds |
 |---|---|
 | `core` | Domain and logic: agent graph, RAG, conversations, tools. It imports neither `autoconfig` nor `runtime`. |
 | `autoconfig` | Spring wiring: `@Configuration`, `@ConfigurationProperties`, bean definitions that assemble `core`. |
-| `runtime` | The running application: `main`, controllers, security filters, tracing aspects. |
+| `runtime` | The running application: controllers, security filters, tracing aspects, platform status. |
 
-The older code is organised by feature (`agent`, `auth`, `chat`, `rag`, …), not yet by this
-plan. **New code goes into the plan's packages:** since Iteration 3, `core.tools` (gateway,
-catalog), `autoconfig.mcp` (MCP connections, tokens) and `runtime.tools` (Tool explorer).
+`RootStockApplication` (the `main` class) stays at `com.rootstock` so component scanning
+covers all three layers; it is the only class outside them.
 
 ## Not yet compliant
 
 These are known gaps between the current code and the rules above. Don't extend them;
 fix them when the related area is touched.
 
-- `RequestTrace` reads the active Spring profile to name the Langfuse environment
-  (`development` when there is none). Nothing sets a profile any more, so this is
-  always `development`.
-- **There are no integration tests.** The Testcontainers-based suite was removed
-  along with Docker (2026-10-06). New ones should use the throwaway RDS schema rule
-  above. There are no `live`-tagged tests yet either: every test mocks Bedrock.
+- There is one integration test so far (`ThrowawaySchemaIT`) and one `live` test
+  (`BedrockChatLiveIT`); everything else mocks the database and Bedrock. New
+  integration tests use `ThrowawaySchemaConfig`.
 
 ## Commands
 
@@ -79,7 +76,9 @@ fix them when the related area is touched.
 cd rootstock-core
 set -a && source .env && set +a     # load settings
 mvn -q -DskipTests compile
-mvn test
+mvn test                            # unit tests, no database or AWS
+mvn verify                          # + integration tests on a throwaway RDS schema
+mvn verify -Dlive.excluded=none -Dgroups=live   # only tests that call Bedrock
 mvn spring-boot:run                 # http://localhost:8080
 
 cd frontend && npm run dev          # http://localhost:5173, proxies /api to :8080
