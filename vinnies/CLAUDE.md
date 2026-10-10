@@ -9,6 +9,12 @@ Vinnies-specific lives here; `rootstock-core` never references this folder.
   Rootstock reads `packs/vinnies/tools.yaml` through `ROOTSTOCK_TOOLS_FILE`. **A new MCP tool
   is only callable by Rootstock once it is listed there**, with READ or WRITE and on a
   node's allowlist; WRITE tools only in `commit`. Never put secrets in it: `${...}` from `.env`.
+  `packs/vinnies/ontology.yaml` is the Vinnies ontology (found through
+  `ROOTSTOCK_PACKS_PATHS`). After changing it, regenerate `packs/vinnies/generated/` from
+  `rootstock-core` with `mvn test -Dtest=PackSnapshotTest -Dsnapshot.update=true` (with
+  `.env` loaded) and review the diff; never edit `generated/` by hand. In flow mappings
+  (`{ ... }`), a description with a comma must move to block style, or the loader reports
+  an unknown key.
 
 All repo-wide rules in `../CLAUDE.md` apply. The rules below are specific to Vinnies.
 

@@ -1,0 +1,42 @@
+{
+  "$schema" : "https://json-schema.org/draft/2020-12/schema",
+  "title" : "Job",
+  "description" : "A repair job opened from a tenant's report.",
+  "type" : "object",
+  "additionalProperties" : false,
+  "required" : [ "priority", "defects", "propertyRef" ],
+  "properties" : {
+    "priority" : {
+      "type" : "string",
+      "enum" : [ "LOW", "URGENT" ],
+      "description" : "LOW: Can wait for a routine visit; URGENT: Risk to safety or the home within 24 hours."
+    },
+    "defects" : {
+      "type" : "array",
+      "minItems" : 1,
+      "items" : {
+        "$ref" : "#/$defs/Defect"
+      }
+    },
+    "propertyRef" : {
+      "type" : "string",
+      "description" : "Id of the Property in the client system"
+    }
+  },
+  "$defs" : {
+    "Defect" : {
+      "title" : "Defect",
+      "description" : "One thing that needs fixing.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "trade" ],
+      "properties" : {
+        "trade" : {
+          "type" : "string",
+          "enum" : [ "PLUMBING", "ELECTRICAL" ],
+          "description" : "PLUMBING: Water, taps, toilets, drains and hot water; ELECTRICAL: Power points, lights, switchboard."
+        }
+      }
+    }
+  }
+}

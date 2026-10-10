@@ -36,6 +36,9 @@ export function AppShell({ children, wide = false }: { children: ReactNode; wide
                 Tools
               </NavLink>
             )}
+            <NavLink to="/ontology" className={({ isActive }) => (isActive ? 'is-active' : '')}>
+              Ontology
+            </NavLink>
             <NavLink to="/status" className={({ isActive }) => (isActive ? 'is-active' : '')}>
               Status
             </NavLink>

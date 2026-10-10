@@ -1,0 +1,58 @@
+# The core ontology: the concepts every domain shares. Domain packs extend these
+# (a household asking for help is a core.Party, a customs entry is a core.Case), and the
+# generic nodes work on these only: validate raises Issues, draft proposes
+# Actions, review records Approvals, commit executes approved Actions.
+apiVersion: rootstock/v1
+kind: Ontology
+metadata:
+  name: rootstock-core
+  version: 1.0.0
+  description: Concepts shared by every domain.
+
+entities:
+  Party:
+    description: A person or organisation the work is about.
+  Document:
+    description: Source material the agent reads.
+    attributes:
+      text: { type: string, description: The document's text as received. }
+      receivedAt: { type: datetime }
+  Case:
+    description: The unit of work that moves through the graph.
+  Request:
+    description: Something the party needs.
+  Action:
+    description: A proposed change in the client system. Only approved Actions are committed.
+  Issue:
+    description: A problem found by rules or a judge.
+    attributes:
+      ruleId: { type: string, required: true }
+      severity: { vocab: IssueSeverity, required: true }
+      message: { type: string, required: true }
+    relations:
+      about: { to: Case, required: true }
+  Approval:
+    description: A human decision that authorises Actions.
+    attributes:
+      decision: { vocab: ApprovalDecision, required: true }
+      decidedBy: { type: string, required: true, pii: true }
+      decidedAt: { type: datetime, required: true }
+      comment: { type: string }
+    relations:
+      authorises: { to: Action, many: true }
+
+vocabularies:
+  IssueSeverity:
+    description: How much an Issue holds up its Case.
+    BLOCKING:
+      definition: The Case cannot be committed until this is resolved.
+    WARNING:
+      definition: A reviewer should look at this, but it does not stop the Case.
+  ApprovalDecision:
+    description: What the reviewer decided.
+    APPROVED:
+      definition: Approved as proposed.
+    EDITED:
+      definition: Approved after the reviewer changed the record.
+    REJECTED:
+      definition: Not approved; nothing is committed.

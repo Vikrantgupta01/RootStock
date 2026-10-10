@@ -1,0 +1,145 @@
+# The Vinnies ontology: what a home-visit assistance case is made of. Extends
+# Rootstock's core ontology; schemas, prompt glossaries and checks are generated
+# from this file, so a concept is defined once. All data is fictional.
+apiVersion: rootstock/v1
+kind: Ontology
+metadata:
+  name: vinnies
+  version: 1.0.0
+  extends: rootstock-core
+  description: St Vincent de Paul Society (Vinnies) home-visit assistance.
+
+entities:
+  Case:
+    extends: core.Case
+    description: An assistance case opened after a home visit.
+    attributes:
+      urgency: { vocab: Urgency, required: true }
+      riskFlags: { vocab: RiskFlag, many: true }
+      visitDate: { type: date, required: true, description: The day of the home visit. }
+      visitSummary:
+        type: string
+        description: A short, neutral summary of the visit, without names.
+    relations:
+      concerns: { to: Household, required: true, field: household }
+      derivedFrom: { to: VisitNote }
+      identifies: { to: Need, many: true, min: 1, field: needs }
+      proposes: { to: Assistance, many: true, field: assistance }
+      makes: { to: Referral, many: true, field: referrals }
+      visitedBy: { to: Member, required: true, field: visitingMember }
+
+  Household:
+    extends: core.Party
+    description: The people living at one address who asked for help.
+    attributes:
+      suburb: { type: string, required: true, pii: false }
+      contact: { type: string, pii: true, description: Phone number or other contact detail. }
+      consentGiven:
+        type: boolean
+        description: Whether the household agreed to share its details for referrals.
+      adults: { type: integer, min: 0 }
+      children: { type: integer, min: 0 }
+    relations:
+      members: { to: Person, many: true }
+
+  Person:
+    extends: core.Party
+    description: Someone in the household.
+    attributes:
+      name: { type: string, required: true, pii: true }
+      dateOfBirth: { type: date, pii: true }
+
+  Member:
+    extends: core.Party
+    description: A Vinnies volunteer who visits households.
+    attributes:
+      name: { type: string, required: true, pii: true }
+
+  VisitNote:
+    extends: core.Document
+    description: What a member writes after a home visit; often hurried and messy.
+
+  Need:
+    extends: core.Request
+    description: Something the household needs help with.
+    attributes:
+      category: { vocab: NeedCategory, required: true }
+      details:
+        type: string
+        description: What the notes say about this need, in one sentence.
+
+  Assistance:
+    extends: core.Action
+    description: Help Vinnies gives directly, such as vouchers or paying part of a bill.
+    attributes:
+      category: { vocab: NeedCategory, required: true }
+      amountAud: { type: decimal, min: 0, max: 5000 }
+    relations:
+      meets: { to: Need }
+
+  Referral:
+    extends: core.Action
+    description: Sending the household to another service for help Vinnies does not give.
+    attributes:
+      reason: { type: string }
+    relations:
+      forNeed: { to: Need }
+      refersTo: { to: Service, required: true, field: service }
+
+  Service:
+    extends: core.Party
+    description: An organisation Vinnies refers households to, already known to the client system.
+
+vocabularies:
+  NeedCategory:
+    description: What a household needs help with.
+    FOOD:
+      definition: Food parcels or supermarket vouchers.
+      synonyms: [groceries, food hamper, nothing in the fridge]
+    ENERGY_BILL:
+      definition: Help with gas or electricity bills, including disconnection notices.
+      synonyms: [power bill, electricity cut off, gas bill]
+    RENT:
+      definition: Help with rent arrears or bond.
+      synonyms: [behind on rent, eviction notice, bond]
+  Urgency:
+    description: How soon the household needs help.
+    LOW:
+      definition: Help can wait for the next regular visit.
+    MEDIUM:
+      definition: Help is needed within a week.
+    HIGH:
+      definition: Risk to safety or basic needs within 48 hours.
+  RiskFlag:
+    description: Signs that something could go badly wrong soon.
+    DISCONNECTION:
+      definition: Power, gas or water is about to be, or has been, cut off.
+      synonyms: [disconnection notice, final notice, power cut off]
+    EVICTION:
+      definition: The household has been told to leave its home.
+      synonyms: [notice to vacate, being evicted]
+    NO_FOOD:
+      definition: There is no food in the house today.
+      synonyms: [nothing to eat, kids went hungry]
+    SAFETY:
+      definition: Someone in the household is unsafe at home.
+      synonyms: [domestic violence, afraid at home]
+
+constraints:
+  - id: urgent-needs-follow-up
+    description: A case with any risk flag must be urgent, so it is followed up within 48 hours.
+    when: { Case.riskFlags: notEmpty }
+    require: { Case.urgency: HIGH }
+
+projections:
+  case-extraction:
+    description: What the extraction agent fills in from a member's visit notes.
+    root: Case
+    embed: [Household, Need, Assistance, Referral]
+    reference: [Service, Member]
+  chase-context:
+    description: The smaller view the chase writer needs.
+    root: Case
+    embed: [Need]
+    include: [urgency, needs.category]
+    reference: [Household]

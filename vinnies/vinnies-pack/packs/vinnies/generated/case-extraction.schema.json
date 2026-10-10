@@ -1,0 +1,141 @@
+{
+  "$schema" : "https://json-schema.org/draft/2020-12/schema",
+  "title" : "Case",
+  "description" : "An assistance case opened after a home visit.",
+  "type" : "object",
+  "additionalProperties" : false,
+  "required" : [ "urgency", "visitDate", "household", "needs", "visitingMemberRef" ],
+  "properties" : {
+    "urgency" : {
+      "type" : "string",
+      "enum" : [ "LOW", "MEDIUM", "HIGH" ],
+      "description" : "LOW: Help can wait for the next regular visit; MEDIUM: Help is needed within a week; HIGH: Risk to safety or basic needs within 48 hours."
+    },
+    "riskFlags" : {
+      "type" : "array",
+      "description" : "DISCONNECTION: Power, gas or water is about to be, or has been, cut off; EVICTION: The household has been told to leave its home; NO_FOOD: There is no food in the house today; SAFETY: Someone in the household is unsafe at home.",
+      "items" : {
+        "type" : "string",
+        "enum" : [ "DISCONNECTION", "EVICTION", "NO_FOOD", "SAFETY" ]
+      }
+    },
+    "visitDate" : {
+      "type" : "string",
+      "format" : "date",
+      "description" : "The day of the home visit."
+    },
+    "visitSummary" : {
+      "type" : "string",
+      "description" : "A short, neutral summary of the visit, without names."
+    },
+    "household" : {
+      "$ref" : "#/$defs/Household"
+    },
+    "needs" : {
+      "type" : "array",
+      "minItems" : 1,
+      "items" : {
+        "$ref" : "#/$defs/Need"
+      }
+    },
+    "assistance" : {
+      "type" : "array",
+      "items" : {
+        "$ref" : "#/$defs/Assistance"
+      }
+    },
+    "referrals" : {
+      "type" : "array",
+      "items" : {
+        "$ref" : "#/$defs/Referral"
+      }
+    },
+    "visitingMemberRef" : {
+      "type" : "string",
+      "description" : "Id of the Member in the client system"
+    }
+  },
+  "$defs" : {
+    "Household" : {
+      "title" : "Household",
+      "description" : "The people living at one address who asked for help.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "suburb" ],
+      "properties" : {
+        "suburb" : {
+          "type" : "string"
+        },
+        "contact" : {
+          "type" : "string",
+          "description" : "Phone number or other contact detail."
+        },
+        "consentGiven" : {
+          "type" : "boolean",
+          "description" : "Whether the household agreed to share its details for referrals."
+        },
+        "adults" : {
+          "type" : "integer",
+          "minimum" : 0
+        },
+        "children" : {
+          "type" : "integer",
+          "minimum" : 0
+        }
+      }
+    },
+    "Need" : {
+      "title" : "Need",
+      "description" : "Something the household needs help with.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "category" ],
+      "properties" : {
+        "category" : {
+          "type" : "string",
+          "enum" : [ "FOOD", "ENERGY_BILL", "RENT" ],
+          "description" : "FOOD: Food parcels or supermarket vouchers; ENERGY_BILL: Help with gas or electricity bills, including disconnection notices; RENT: Help with rent arrears or bond."
+        },
+        "details" : {
+          "type" : "string",
+          "description" : "What the notes say about this need, in one sentence."
+        }
+      }
+    },
+    "Assistance" : {
+      "title" : "Assistance",
+      "description" : "Help Vinnies gives directly, such as vouchers or paying part of a bill.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "category" ],
+      "properties" : {
+        "category" : {
+          "type" : "string",
+          "enum" : [ "FOOD", "ENERGY_BILL", "RENT" ],
+          "description" : "FOOD: Food parcels or supermarket vouchers; ENERGY_BILL: Help with gas or electricity bills, including disconnection notices; RENT: Help with rent arrears or bond."
+        },
+        "amountAud" : {
+          "type" : "number",
+          "minimum" : 0,
+          "maximum" : 5000
+        }
+      }
+    },
+    "Referral" : {
+      "title" : "Referral",
+      "description" : "Sending the household to another service for help Vinnies does not give.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "serviceRef" ],
+      "properties" : {
+        "reason" : {
+          "type" : "string"
+        },
+        "serviceRef" : {
+          "type" : "string",
+          "description" : "Id of the Service in the client system"
+        }
+      }
+    }
+  }
+}

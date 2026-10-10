@@ -4,6 +4,7 @@ import { useCurrentUser, useHasSession } from './hooks/useSession'
 import { AgentPage } from './pages/AgentPage'
 import { ChatPage } from './pages/ChatPage'
 import { KnowledgePage } from './pages/KnowledgePage'
+import { OntologyPage } from './pages/OntologyPage'
 import { StatusPage } from './pages/StatusPage'
 import { ToolsPage } from './pages/ToolsPage'
 
@@ -29,6 +30,7 @@ export default function App() {
       <Route path="/agent" element={<AgentPage />} />
       <Route path="/knowledge" element={<KnowledgePage />} />
       <Route path="/tools" element={<ToolsPage />} />
+      <Route path="/ontology" element={<OntologyPage />} />
       <Route path="/status" element={<StatusPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

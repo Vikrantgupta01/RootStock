@@ -9,14 +9,15 @@ setup, layout, and configuration reference.
 ```bash
 cd rootstock-core
 set -a && source .env && set +a
-mvn test                                        # unit, controller slice, architecture tests
+mvn test                                        # unit, controller slice, architecture, snapshot tests
 mvn verify                                      # + integration tests on a throwaway RDS schema
 mvn verify -Dlive.excluded=none -Dgroups=live   # only the tests that call Bedrock
 cd ../frontend && npm run build && npm run lint
 ```
 
 `mvn test` needs neither a database nor AWS: nothing in it connects to
-anything.
+anything. (`.env` is only read by `PackSnapshotTest`, for the pack folders;
+without it that test is skipped.)
 
 - Controller slice tests (`*ControllerTest`) run with the security filter chain
   switched off (`addFilters = false`): it isn't in a `@WebMvcTest` context, and
@@ -27,6 +28,12 @@ anything.
 - `ArchitectureTest` (ArchUnit) enforces the layers: `core` never depends on
   `autoconfig` or `runtime`, `autoconfig` never on `runtime`, and nothing in
   `src/main` names a demo domain.
+- Ontology tests (`core.ontology`, `core.pack`) use a made-up repairs domain
+  (`src/test/resources/ontology/sample-pack.yaml`): the loader, every kind of
+  validation message, and snapshots of the generated schema and glossary.
+  `PackSnapshotTest` also checks each configured pack's `generated/` files.
+  Refresh snapshots after an intended change with `-Dsnapshot.update=true`,
+  then review the diff.
 - **Integration tests** (`*IT`, `mvn verify`) start the whole app against RDS
   in a throwaway schema (`rootstock_test_<timestamp>_<id>`), created and
   Flyway-migrated for the run and dropped at the end (`ThrowawaySchemaConfig`).

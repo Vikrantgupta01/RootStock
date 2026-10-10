@@ -1,0 +1,17 @@
+Glossary: repairs ontology 0.1.0, projection job-intake.
+Use these codes exactly. Match what the text says to the closest definition or synonym.
+
+Priority
+Used for Job.priority.
+- LOW: Can wait for a routine visit.
+- URGENT: Risk to safety or the home within 24 hours.
+
+Hazard
+Used for Job.hazards.
+- FLOODING: Water is spreading. Also said as: water everywhere.
+- EXPOSED_WIRING: Live wires can be touched.
+
+Trade: The kind of tradesperson a defect needs.
+Used for Defect.trade, Visit.trade.
+- PLUMBING: Water, taps, toilets, drains and hot water. Also said as: leak, blocked drain, no hot water.
+- ELECTRICAL: Power points, lights, switchboard. Also said as: sparks, power out.

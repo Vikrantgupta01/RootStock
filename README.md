@@ -27,7 +27,8 @@ RootStock/
 ├── rootstock-core/   Spring Boot 4 · Java 21 · Maven · Spring AI 2 (Bedrock Converse) · LangGraph4j · JPA · Flyway
 ├── frontend/         React 19 · TypeScript · Vite · React Router · TanStack Query
 ├── vinnies/          Vinnies demo domain (fictional data); never referenced by rootstock-core
-│   └── vinnies-mcp-server/   dummy Vinnies app exposing MCP tools (find_household, …)
+│   ├── vinnies-mcp-server/   dummy Vinnies app exposing MCP tools (find_household, …)
+│   └── vinnies-pack/         Rootstock's Vinnies pack: ontology.yaml, tools.yaml, generated/
 └── docs/design.md    Sinew Rootstock design and iteration plan
 ```
 
@@ -37,7 +38,7 @@ dependencies point inwards only (`runtime → autoconfig → core`, enforced by
 
 | Package | Holds |
 |---|---|
-| `core` | Domain and logic: agent graph, RAG, conversations, tools |
+| `core` | Domain and logic: agent graph, RAG, conversations, tools, ontology, packs |
 | `autoconfig` | Spring wiring: `@Configuration`, properties, beans that assemble `core` |
 | `runtime` | The running app: controllers, security filters, tracing aspects, status |
 
@@ -123,6 +124,7 @@ Backend config lives in `rootstock-core/src/main/resources/application.yml`. Key
 | `management.tracing.sampling.probability` | `LANGFUSE_SAMPLE_RATE` | `1.0` |
 | `rootstock.observability.langfuse.environment` | `LANGFUSE_ENVIRONMENT` | `development` |
 | `spring.config.import` (`rootstock.tools.*`) | `ROOTSTOCK_TOOLS_FILE` | _(unset: no client systems)_ path to a domain pack's `tools.yaml` |
+| `rootstock.packs.paths` | `ROOTSTOCK_PACKS_PATHS` | _(unset: no packs)_ comma-separated folders of domain packs, e.g. `vinnies/vinnies-pack/packs` |
 | `rootstock.cors.allowed-origins` | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` |
 
 > Set `BEDROCK_MODEL` to a model or inference-profile id your AWS account has
@@ -422,6 +424,52 @@ and each tool as the client system describes it; `POST /api/tools/call` takes
 `{node, tool, arguments, caseId?}` and returns the result with a Langfuse trace
 link. The acting user is always the signed-in user.
 
+## Ontology and domain packs
+
+A **domain pack** is a folder of YAML that adapts Rootstock to one client:
+`ontology.yaml` (its concepts), `tools.yaml` (its client system's MCP tools),
+and later its graph, agents and rules. Rootstock ships none and never names a
+domain; it reads every pack under `ROOTSTOCK_PACKS_PATHS` at startup and logs
+what it found.
+
+Each pack's `ontology.yaml` **extends the core ontology**
+(`rootstock-core/src/main/resources/ontology/rootstock-core.yaml`: Party,
+Document, Case, Request, Action, Issue, Approval). It declares:
+
+- **entities** with attributes (`type` or `vocab`, `required`, `many`, `min`,
+  `max`, `pii`) and relations (`to`, `many`, `min`, `field`), each extending a
+  core concept (`extends: core.Case`);
+- **vocabularies**: codes with a definition and synonyms;
+- **constraints**: `when` / `require` conditions across fields;
+- **projections**: views rooted at one entity, which **embed** related
+  entities (filled in from the input) or **reference** them by id.
+
+From that Rootstock generates, per projection, the **JSON Schema** an agent's
+structured output must match, and a **prompt glossary** of the vocabularies it
+uses (codes, definitions, synonyms).
+
+**Checked on load, with clear messages:** the loader rejects unknown keys,
+wrong value types, duplicate keys and invalid YAML (with the line); the
+validator rejects unknown concepts, entities and vocabularies, values that are
+not codes of their vocabulary, constraint paths that don't exist, projections
+that cannot reach what they embed, a synonym used by two codes, and more. Every
+problem is reported at once, with where it is (`entities.Need.attributes.category.vocab:
+unknown vocabulary 'NeedCategories'; known: [...]`). **A broken pack is listed
+as INVALID with its problems; Rootstock keeps running** and doesn't use it.
+
+**Ontology explorer** (`/ontology`): the packs found with their status, each
+pack's concepts (inherited fields marked), vocabularies, constraints and
+projections, with the generated schema and glossary side by side. Admins can
+**Reload packs** after editing a file, with no restart. Endpoints:
+`GET /api/ontology`, `GET /api/ontology/core`, `GET /api/ontology/packs/{name}`,
+`GET /api/ontology/packs/{name}/projections/{projection}` (schema and glossary),
+`POST /api/ontology/reload` (ADMIN).
+
+**Generated files are snapshot-tested.** A pack keeps its generated schema and
+glossary in `generated/`; `PackSnapshotTest` fails when they no longer match its
+ontology. After an intended change, regenerate them and review the diff:
+`mvn test -Dtest=PackSnapshotTest -Dsnapshot.update=true` (with `.env` loaded).
+
 ## Platform status
 
 `/status` (any signed-in user) checks, on demand, every service Rootstock
@@ -490,7 +538,7 @@ Agent follow-ups worth doing:
 ```bash
 cd rootstock-core
 set -a && source .env && set +a
-mvn test                                        # unit, controller slice, architecture tests; no database or AWS
+mvn test                                        # unit, controller slice, architecture, snapshot tests; no database or AWS
 mvn verify                                      # + integration tests (*IT) on a throwaway RDS schema
 mvn verify -Dlive.excluded=none -Dgroups=live   # only the tests that call Bedrock (tagged live)
 cd ../frontend && npm run build && npm run lint
@@ -506,6 +554,9 @@ cd ../frontend && npm run build && npm run lint
 - **Architecture** (`ArchitectureTest`): `core` doesn't depend on `autoconfig`
   or `runtime`, `autoconfig` not on `runtime`, every class is in a layer, and
   nothing in `src/main` mentions a demo domain.
+- **Snapshots**: the schema and glossary generators are checked against
+  committed files (`src/test/resources/ontology/snapshots/`, and each pack's
+  `generated/`); refresh with `-Dsnapshot.update=true` and review the diff.
 
 See **[TESTING.md](TESTING.md)** for what each suite covers and a full manual
 walkthrough (API + UI) of the Customer and RAG features. The agent's graph

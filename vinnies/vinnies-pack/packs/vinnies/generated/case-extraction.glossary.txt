@@ -1,0 +1,21 @@
+Glossary: vinnies ontology 1.0.0, projection case-extraction.
+Use these codes exactly. Match what the text says to the closest definition or synonym.
+
+Urgency: How soon the household needs help.
+Used for Case.urgency.
+- LOW: Help can wait for the next regular visit.
+- MEDIUM: Help is needed within a week.
+- HIGH: Risk to safety or basic needs within 48 hours.
+
+RiskFlag: Signs that something could go badly wrong soon.
+Used for Case.riskFlags.
+- DISCONNECTION: Power, gas or water is about to be, or has been, cut off. Also said as: disconnection notice, final notice, power cut off.
+- EVICTION: The household has been told to leave its home. Also said as: notice to vacate, being evicted.
+- NO_FOOD: There is no food in the house today. Also said as: nothing to eat, kids went hungry.
+- SAFETY: Someone in the household is unsafe at home. Also said as: domestic violence, afraid at home.
+
+NeedCategory: What a household needs help with.
+Used for Need.category, Assistance.category.
+- FOOD: Food parcels or supermarket vouchers. Also said as: groceries, food hamper, nothing in the fridge.
+- ENERGY_BILL: Help with gas or electricity bills, including disconnection notices. Also said as: power bill, electricity cut off, gas bill.
+- RENT: Help with rent arrears or bond. Also said as: behind on rent, eviction notice, bond.

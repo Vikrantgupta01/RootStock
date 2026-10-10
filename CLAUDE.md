@@ -54,12 +54,24 @@ class is in one of the three, and that nothing in `src/main` mentions Vinnies.
 
 | Package | Holds |
 |---|---|
-| `core` | Domain and logic: agent graph, RAG, conversations, tools. It imports neither `autoconfig` nor `runtime`. |
+| `core` | Domain and logic: agent graph, RAG, conversations, tools, ontology, packs. It imports neither `autoconfig` nor `runtime`. |
 | `autoconfig` | Spring wiring: `@Configuration`, `@ConfigurationProperties`, bean definitions that assemble `core`. |
 | `runtime` | The running application: controllers, security filters, tracing aspects, platform status. |
 
 `RootStockApplication` (the `main` class) stays at `com.rootstock` so component scanning
 covers all three layers; it is the only class outside them.
+
+## Domain packs and the ontology
+
+- A pack is a folder of YAML (`ontology.yaml`, `tools.yaml`, …) found through
+  `ROOTSTOCK_PACKS_PATHS`. Rootstock ships none.
+- `ontology.yaml` extends the core ontology in
+  `src/main/resources/ontology/rootstock-core.yaml` (refer to its concepts as `core.X`).
+  Changing the core ontology changes every pack: treat it as public API.
+- Schemas and glossaries are **generated** from the ontology, never written by hand.
+  A pack's `generated/` files are snapshot-tested by `PackSnapshotTest`; after an intended
+  change run `mvn test -Dtest=PackSnapshotTest -Dsnapshot.update=true` and review the diff.
+- A broken pack must never stop Rootstock: it is listed INVALID with its problems.
 
 ## Not yet compliant
 

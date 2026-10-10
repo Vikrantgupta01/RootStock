@@ -1,0 +1,104 @@
+{
+  "$schema" : "https://json-schema.org/draft/2020-12/schema",
+  "title" : "Job",
+  "description" : "A repair job opened from a tenant's report.",
+  "type" : "object",
+  "additionalProperties" : false,
+  "required" : [ "priority", "reportedOn", "tenant", "defects", "propertyRef" ],
+  "properties" : {
+    "priority" : {
+      "type" : "string",
+      "enum" : [ "LOW", "URGENT" ],
+      "description" : "LOW: Can wait for a routine visit; URGENT: Risk to safety or the home within 24 hours."
+    },
+    "hazards" : {
+      "type" : "array",
+      "description" : "FLOODING: Water is spreading; EXPOSED_WIRING: Live wires can be touched.",
+      "items" : {
+        "type" : "string",
+        "enum" : [ "FLOODING", "EXPOSED_WIRING" ]
+      }
+    },
+    "reportedOn" : {
+      "type" : "string",
+      "format" : "date"
+    },
+    "tenant" : {
+      "$ref" : "#/$defs/Tenant"
+    },
+    "defects" : {
+      "type" : "array",
+      "minItems" : 1,
+      "items" : {
+        "$ref" : "#/$defs/Defect"
+      }
+    },
+    "visits" : {
+      "type" : "array",
+      "items" : {
+        "$ref" : "#/$defs/Visit"
+      }
+    },
+    "propertyRef" : {
+      "type" : "string",
+      "description" : "Id of the Property in the client system"
+    }
+  },
+  "$defs" : {
+    "Tenant" : {
+      "title" : "Tenant",
+      "description" : "The person who reported the problem.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "name" ],
+      "properties" : {
+        "name" : {
+          "type" : "string"
+        },
+        "phone" : {
+          "type" : "string"
+        }
+      }
+    },
+    "Defect" : {
+      "title" : "Defect",
+      "description" : "One thing that needs fixing.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "trade" ],
+      "properties" : {
+        "trade" : {
+          "type" : "string",
+          "enum" : [ "PLUMBING", "ELECTRICAL" ],
+          "description" : "PLUMBING: Water, taps, toilets, drains and hot water; ELECTRICAL: Power points, lights, switchboard."
+        },
+        "room" : {
+          "type" : "string"
+        }
+      }
+    },
+    "Visit" : {
+      "title" : "Visit",
+      "description" : "A tradesperson's visit to fix defects.",
+      "type" : "object",
+      "additionalProperties" : false,
+      "required" : [ "trade", "contractorRef" ],
+      "properties" : {
+        "trade" : {
+          "type" : "string",
+          "enum" : [ "PLUMBING", "ELECTRICAL" ],
+          "description" : "PLUMBING: Water, taps, toilets, drains and hot water; ELECTRICAL: Power points, lights, switchboard."
+        },
+        "estimateAud" : {
+          "type" : "number",
+          "minimum" : 0,
+          "maximum" : 10000
+        },
+        "contractorRef" : {
+          "type" : "string",
+          "description" : "Id of the Contractor in the client system"
+        }
+      }
+    }
+  }
+}
