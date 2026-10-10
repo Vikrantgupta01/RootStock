@@ -477,12 +477,26 @@ ontology. After an intended change, regenerate them and review the diff:
 
 ## Case graph (YAML, compiled to LangGraph4j)
 
-A pack's **`graph.yaml`** says how a case moves through Rootstock: the state
-channels, the nodes, the edges and where a run pauses. Its **`agents/*.yaml`**
-configure the agent nodes (type, model profile, Langfuse prompt, input,
-output projection, tools). At startup Rootstock checks both files against
-JSON Schemas (`rootstock-core/src/main/resources/schemas/`) and compiles the
-graph into LangGraph4j (`core.graph.GraphCompiler`).
+A pack's graphs (**`graph.yaml`**, or several in **`graphs/`**) say how a case
+moves through Rootstock: how a run starts (`trigger`), the state channels, the
+nodes, the edges, where a run may pause, and how the case stands when a run
+ends (`outcomes`). Its **`agents/*.yaml`** configure the agent nodes (type,
+model profile, Langfuse prompt, input, output projection, tools). At startup
+Rootstock checks every file against JSON Schemas
+(`rootstock-core/src/main/resources/schemas/`) and compiles each graph into
+LangGraph4j (`core.graph.GraphCompiler`).
+
+**A case goes through short runs, not one long one.** Each run is one graph
+and ends quickly; between runs the case waits as data (`case_file`: its status,
+the next graph, who may start it, and the channels it carries), never as a
+graph held open, so nothing goes stale while it waits. Vinnies, for example:
+`case-intake` (`trigger: submit`) runs from the notes to a draft and ends with
+the case `AWAITING_DECISION`, `next: case-decision`; a coordinator's decision
+starts `case-decision` (`trigger: { kind: decision, approverRoles: [coordinator] }`),
+which records the decision, then enriches and validates again on fresh data
+and commits only if nothing blocking or unseen turned up (`issues.unseenBy: review`);
+otherwise the case goes back to the coordinator. (Pausing inside a run with
+`interruptBefore` still works, as the repairs test pack shows.)
 
 - **State channels** have a reducer: `replace`, `merge` (maps) or `append`
   (lists). Everything a node puts in state must be `Serializable`: the
@@ -547,9 +561,29 @@ graph into LangGraph4j (`core.graph.GraphCompiler`).
   writing node passes a `human-review` node the run pauses before; an agent's
   tools exist, are read-only, and are on its node's allowlist in `tools.yaml`;
   an agent's output projection exists in the pack's ontology.
-- **Runs** are in memory for now (the in-memory checkpointer, last 200 runs):
-  a paused run doesn't survive a restart, and resuming arrives with review
-  (Iteration 9).
+- **Cases and runs are durable**: every run's status, events and result in
+  `case_run`, every case's standing in `case_file` (Flyway V10, V11), so lists,
+  history and waiting cases survive a restart. A run that was mid-node when
+  Rootstock stopped is marked FAILED at the next start. A graph that does pause
+  inside a run can keep its checkpoints in Postgres with
+  `runtime.checkpointer: postgres` (`JdbcCheckpointSaver`, `case_checkpoint`;
+  state Java-serialized, reads limited to JDK and Rootstock classes).
+- **Human decisions** (`CaseDecisions`): a case waiting for a decision (between
+  runs, for a graph started by a decision; or paused before a `human-review`
+  node) may be decided only by someone in the `approverRoles` (Cognito groups)
+  or an admin. The review screens belong to the client's own application (for
+  Vinnies, `vinnies/vinnies-frontend`); Rootstock lists the cases waiting for
+  the signed-in user and takes their decision: APPROVED, EDITED (with the
+  edited record) or REJECTED. It goes into the case's state as `review` (with
+  the issues the reviewer was shown), the next graph starts (or the paused run
+  resumes), the graph routes on it, and the `human-review` node records who
+  decided what in the audit.
+- **Writes are always gated**: every path to a writing node passes a
+  `human-review` node a person decides at, either paused before or in a graph
+  only an approver's decision can start. Checked at startup.
+- **`drafter`**: one model call proposing actions of the types the node allows
+  (`actionTypes: [REFERRAL, FOLLOW_UP]`), each `{type, summary, details}`;
+  a reply that never matches is parked.
 
 **Cases screen** (`/cases`): submit visit notes and watch each node light up
 as the run goes, until it pauses (before review, or after clarify) or ends. It
@@ -562,10 +596,15 @@ event log, the issues, actions and audit trail, and a link to the run's Langfuse
 trace: one `process-case` trace per run, with the case id as the session, a
 `node-<id>` span per node, and the extraction's generation linked to the
 Langfuse prompt version it used. A **Simulate** option still drives the chase
-route until the pack's own rules exist. Endpoints: `POST /api/cases` `{input, simulate?}` (starts a run,
+route until the pack's own rules exist. Endpoints: `POST /api/cases` `{input, simulate?}` (starts a case with the pack's submit graph,
 returns at once), `GET /api/cases` (your cases; all for an admin),
 `GET /api/cases/{id}`, `GET /api/cases/{id}/events` (server-sent events: every
-event so far, then each new one), `GET /api/cases/graph`.
+event so far, then each new one), `GET /api/cases/graph`,
+`GET /api/cases/awaiting-decision` (cases waiting for a decision you may make),
+`POST /api/cases/{id}/decision` `{decision, comment?, record?}` (403 unless you
+are in the review node's approverRoles or an admin; 409 when nothing is waiting).
+`GET /api/ontology/packs/{pack}/projections/{p}?mode=extraction` gives the
+record's editable shape.
 
 ## Platform status
 

@@ -147,7 +147,7 @@ class PromptRegistryTest {
 
 		Map<String, PromptTemplate> bundled = BundledPrompts.load(pack);
 
-		assertThat(bundled).containsOnlyKeys("repairs/extract-job", "repairs/judge", "repairs/lookup");
+		assertThat(bundled).containsOnlyKeys("repairs/extract-job", "repairs/judge", "repairs/lookup", "repairs/plan-visit");
 		PromptTemplate t = bundled.get("repairs/extract-job");
 		assertThat(t.messages()).extracting(PromptTemplate.Part::role).containsExactly("system", "user");
 		assertThat(t.variables()).containsExactly("glossary", "report", "schema", "today");

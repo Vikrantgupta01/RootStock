@@ -25,10 +25,11 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
- * Whole cases through each configured pack's graph, with the real model,
- * prompts and client system. Each file in {@code <pack>/samples/cases/} has the
- * {@code input} submitted and what the run must show ({@code expect.issues}:
- * rule ids among its issues; {@code expect.pausedAt}: where it stops); the
+ * Whole cases through each configured pack's intake graph, with the real
+ * model, prompts and client system. Each file in {@code <pack>/samples/cases/}
+ * has the {@code input} submitted and what the run must show
+ * ({@code expect.issues}: rule ids among its issues; {@code expect.actions}:
+ * kinds of action drafted; {@code expect.status}: how the case then stands); the
  * first sample of the pack's extraction agent runs too, and must simply stop
  * where a person is needed. Every run must have a record and, for every
  * tool-calling agent, at least one successful lookup. Tagged {@code live};
@@ -51,7 +52,7 @@ class CaseRunLiveIT {
 	@TestFactory
 	Stream<DynamicTest> sampleCasesRunThroughTheWholeGraph() throws Exception {
 		List<DynamicTest> tests = new ArrayList<>();
-		for (CaseGraph graph : graphs.all()) {
+		for (CaseGraph graph : graphs.entries()) {
 			Path samples = Path.of(packs.snapshot().packs().stream().filter(p -> p.name().equals(graph.pack()))
 					.findFirst().orElseThrow().location(), "samples");
 			List<Path> files = new ArrayList<>(yaml(samples.resolve("cases")));
@@ -101,8 +102,12 @@ class CaseRunLiveIT {
 		Map<String, Object> expect = (Map<String, Object>) s.getOrDefault("expect", Map.of());
 		assertThat(issues).as(story).extracting(CaseIssue::ruleId)
 				.containsAll((List<String>) expect.getOrDefault("issues", List.of()));
-		if (expect.get("pausedAt") != null) {
-			assertThat(run.pause()).as(story).isNotNull().extracting(CaseRun.Pause::node).isEqualTo(expect.get("pausedAt"));
+		List<String> actionTypes = run.result().get("actions") instanceof List<?> l
+				? l.stream().map(a -> ((com.rootstock.core.graph.ProposedAction) a).type()).toList() : List.of();
+		assertThat(actionTypes).as("drafted actions" + story + "\nactions: " + run.result().get("actions"))
+				.containsAll((List<String>) expect.getOrDefault("actions", List.of()));
+		if (expect.get("status") != null) {
+			assertThat(service.caseFile(run.caseId()).orElseThrow().status()).as(story).isEqualTo(expect.get("status"));
 		}
 	}
 }

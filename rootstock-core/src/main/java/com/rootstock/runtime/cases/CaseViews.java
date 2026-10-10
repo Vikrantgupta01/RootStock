@@ -1,10 +1,12 @@
 package com.rootstock.runtime.cases;
 
+import com.rootstock.core.cases.CaseDecisions;
 import com.rootstock.core.cases.CaseRun;
 import com.rootstock.core.cases.RunEvent;
 import com.rootstock.core.graph.CaseGraph;
 import com.rootstock.core.graph.GraphDefinition;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
@@ -31,28 +33,38 @@ final class CaseViews {
 	}
 
 	/**
+	 * @param caseStatus how the case stands: its latest run's outcome (e.g. AWAITING_DECISION), or the run's status
+	 * @param waitingFor when the case waits for a human decision: the roles that may make it; null otherwise
 	 * @param input, {@code events} and {@code result} only in a single case's detail; input as submitted
 	 * @param traceUrl the run's Langfuse trace; null when tracing is off
 	 */
 	record RunView(String caseId, String runId, String pack, String graph, String graphVersion, CaseRun.Status status,
-			PauseView pause, String error, Instant startedAt, String traceUrl, String input, List<RunEvent> events,
-			Map<String, Object> result) {
+			String caseStatus, PauseView pause, List<String> waitingFor, String error, Instant startedAt, String traceUrl, String input,
+			List<RunEvent> events, Map<String, Object> result) {
 	}
 
-	static RunView summary(CaseRun run, String traceUrl) {
-		return view(run, traceUrl, null, null, null);
+	/**
+	 * @param decision APPROVED, EDITED or REJECTED
+	 * @param record   the reviewer's version of the record, for EDITED
+	 */
+	record DecisionRequest(@NotNull CaseDecisions.Decision decision, @Size(max = 2_000) String comment,
+			Map<String, Object> record) {
 	}
 
-	static RunView detail(CaseRun run, String traceUrl) {
-		return view(run, traceUrl, run.input(), run.events(), run.result());
+	static RunView summary(CaseRun run, String traceUrl, List<String> waitingFor, String caseStatus) {
+		return view(run, traceUrl, waitingFor, caseStatus, null, null, null);
 	}
 
-	private static RunView view(CaseRun run, String traceUrl, String input, List<RunEvent> events,
-			Map<String, Object> result) {
+	static RunView detail(CaseRun run, String traceUrl, List<String> waitingFor, String caseStatus) {
+		return view(run, traceUrl, waitingFor, caseStatus, run.input(), run.events(), run.result());
+	}
+
+	private static RunView view(CaseRun run, String traceUrl, List<String> waitingFor, String caseStatus, String input,
+			List<RunEvent> events, Map<String, Object> result) {
 		CaseRun.Pause pause = run.pause();
 		return new RunView(run.caseId(), run.runId(), run.pack(), run.graph(), run.graphVersion(), run.status(),
-				pause == null ? null : new PauseView(pause.node(), pause.before()), run.error(), run.startedAt(),
-				traceUrl, input, events, result);
+				caseStatus, pause == null ? null : new PauseView(pause.node(), pause.before()), waitingFor, run.error(),
+				run.startedAt(), traceUrl, input, events, result);
 	}
 
 	/** The graph's shape, for drawing it. */

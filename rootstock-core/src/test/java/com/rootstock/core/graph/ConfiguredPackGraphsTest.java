@@ -50,13 +50,16 @@ class ConfiguredPackGraphsTest {
 			if (!PackGraphLoader.hasGraph(dir)) {
 				continue;
 			}
-			PackGraph graph = new PackGraphLoader().load(pack.name(), dir);
+			List<PackGraph> graphs = new PackGraphLoader().loadAll(pack.name(), dir);
 			ResolvedOntology ontology = pack.ontology() == null ? null : new ResolvedOntology(core, pack.ontology());
-			List<GraphProblem> problems = new GraphValidator().validate(graph, new GraphValidator.Context(
+			List<GraphProblem> problems = new GraphValidator().validatePack(graphs, new GraphValidator.Context(
 					RepairsPack.registry(), Set.of(), tools(dir.resolve("tools.yaml")), ontology, "not valid"));
 			assertThat(problems).as("problems in pack %s", pack.name()).isEmpty();
-			assertThat(new GraphCompiler(RepairsPack.registry(), List.of(), NodeListener.NONE).compile(graph, ontology)
-					.compiled()).isNotNull();
+			for (PackGraph graph : graphs) {
+				// In memory here: compiling needs a checkpointer, not where it keeps checkpoints.
+				assertThat(new GraphCompiler(RepairsPack.registry(), List.of(), NodeListener.NONE,
+						new org.bsc.langgraph4j.checkpoint.MemorySaver()).compile(graph, ontology).compiled()).isNotNull();
+			}
 			checked++;
 		}
 		assumeTrue(checked > 0, "no configured pack has a graph");

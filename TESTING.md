@@ -55,11 +55,21 @@ without it that test is skipped.)
   failing at run time), `ConstraintCheckerTest` the ontology constraints,
   `RulesNodeTest` the four validation layers on the repairs pack (its
   `rules.yaml` and judge), `JudgeAgentTest` the judge, `CaseIssueTest` the
-  issue model.
+  issue model, `DrafterAgentTest` the drafter, `HumanReviewNodeTest` the review
+  node. `CaseFlowTest` runs a case through two graphs (`RepairsFlow`: intake,
+  then a decision graph): approve to DONE with the audit across both runs,
+  reject to CLOSED, a blocking or unseen issue on the fresh check sending it
+  back, only approvers deciding, once. `MultiGraphValidatorTest` covers what
+  spans a pack's graphs (outcomes, triggers, the write gate in a decision
+  graph). `CaseRunServiceTest` resumes paused runs (approve, edit back through
+  validate, reject); `CaseControllerTest` the decision API (only approvers or
+  admins, an edit needs its record, deciding twice is a conflict).
 - **Integration tests** (`*IT`, `mvn verify`) start the whole app against RDS
   in a throwaway schema (`rootstock_test_<timestamp>_<id>`), created and
   Flyway-migrated for the run and dropped at the end (`ThrowawaySchemaConfig`).
-  `ThrowawaySchemaIT` checks the app really runs in that schema. A killed run
+  `ThrowawaySchemaIT` checks the app really runs in that schema; `DurableRunsIT`
+  pauses a run with Postgres checkpoints, rebuilds everything as after a
+  restart, and resumes it to the end. A killed run
   can leave a schema behind: `DROP SCHEMA <name> CASCADE`.
 - **Live tests** (`@Tag("live")`) call Bedrock, so they're excluded unless
   asked for. `BedrockChatLiveIT` makes one real model call. `PackSamplesLiveIT`

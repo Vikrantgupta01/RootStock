@@ -137,9 +137,13 @@ function StatusBadge({ run }: { run: CaseRun }) {
     PARKED: 'badge--busy',
   }[run.status]
   const text =
-    run.status === 'PAUSED' && run.pause
-      ? `paused ${run.pause.before ? 'before' : 'after'} ${run.pause.node}`
-      : run.status.toLowerCase()
+    run.status !== 'RUNNING' && run.waitingFor
+      ? `waiting for ${run.waitingFor.join(' or ')}`
+      : run.status === 'PAUSED' && run.pause
+        ? `paused ${run.pause.before ? 'before' : 'after'} ${run.pause.node}`
+        : run.status === 'COMPLETED' && run.caseStatus && run.caseStatus !== 'COMPLETED'
+          ? run.caseStatus.toLowerCase().replace(/_/g, ' ')
+          : run.status.toLowerCase()
   return <span className={`badge ${cls}`}>{text}</span>
 }
 

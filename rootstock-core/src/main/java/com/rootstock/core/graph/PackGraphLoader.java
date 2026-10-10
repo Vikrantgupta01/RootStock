@@ -36,6 +36,7 @@ import tools.jackson.databind.json.JsonMapper;
 public final class PackGraphLoader {
 
 	public static final String GRAPH_FILE = "graph.yaml";
+	public static final String GRAPHS_DIR = "graphs";
 	public static final String AGENTS_DIR = "agents";
 	public static final String RULES_FILE = "rules.yaml";
 
@@ -52,13 +53,42 @@ public final class PackGraphLoader {
 	private final Schema rulesSchema = schema("/schemas/rules.schema.json");
 
 	public static boolean hasGraph(Path packDir) {
-		return Files.isRegularFile(packDir.resolve(GRAPH_FILE));
+		return Files.isRegularFile(packDir.resolve(GRAPH_FILE)) || !yamlFiles(packDir.resolve(GRAPHS_DIR)).isEmpty();
 	}
 
+	/** The pack's only graph (e.g. a pack with just graph.yaml). */
 	public PackGraph load(String pack, Path packDir) {
+		List<PackGraph> graphs = loadAll(pack, packDir);
+		if (graphs.size() != 1) {
+			throw new IllegalStateException("Pack '" + pack + "' has " + graphs.size() + " graphs; use loadAll");
+		}
+		return graphs.getFirst();
+	}
+
+	/** Every graph of the pack (graph.yaml and graphs/*.yaml), each with the pack's agents and rules. */
+	public List<PackGraph> loadAll(String pack, Path packDir) {
 		List<GraphProblem> problems = new ArrayList<>();
-		GraphDefinition graph = read(packDir.resolve(GRAPH_FILE), GRAPH_FILE, graphSchema, GraphDefinition.class,
-				problems);
+		Map<String, GraphDefinition> graphs = new LinkedHashMap<>();
+		if (Files.isRegularFile(packDir.resolve(GRAPH_FILE))) {
+			GraphDefinition g = read(packDir.resolve(GRAPH_FILE), GRAPH_FILE, graphSchema, GraphDefinition.class,
+					problems);
+			if (g != null) {
+				graphs.put(GRAPH_FILE, g);
+			}
+		}
+		for (Path file : yamlFiles(packDir.resolve(GRAPHS_DIR))) {
+			String name = GRAPHS_DIR + "/" + file.getFileName();
+			GraphDefinition g = read(file, name, graphSchema, GraphDefinition.class, problems);
+			if (g == null) {
+				continue;
+			}
+			String expected = file.getFileName().toString().replaceFirst("\\.ya?ml$", "");
+			if (!g.metadata().name().equals(expected)) {
+				problems.add(new GraphProblem(name, "metadata.name",
+						"'" + g.metadata().name() + "' differs from the file name '" + expected + "'"));
+			}
+			graphs.put(name, g);
+		}
 		Map<String, AgentDefinition> agents = new LinkedHashMap<>();
 		for (Path file : agentFiles(packDir.resolve(AGENTS_DIR))) {
 			String name = AGENTS_DIR + "/" + file.getFileName();
@@ -84,7 +114,9 @@ public final class PackGraphLoader {
 		if (!problems.isEmpty()) {
 			throw new GraphDefinitionException("Pack '" + pack + "' has an unreadable graph, agents or rules", problems);
 		}
-		return new PackGraph(pack, graph, agents, rules);
+		List<RuleSpec> packRules = rules;
+		return graphs.entrySet().stream().map(e -> new PackGraph(pack, e.getValue(), agents, packRules, e.getKey()))
+				.toList();
 	}
 
 	private <T> T read(Path file, String name, Schema schema, Class<T> type, List<GraphProblem> problems) {
@@ -162,6 +194,10 @@ public final class PackGraphLoader {
 		options.setAllowDuplicateKeys(false);
 		options.setMaxAliasesForCollections(20);
 		return new Yaml(new SafeConstructor(options)).load(text);
+	}
+
+	private static List<Path> yamlFiles(Path dir) {
+		return agentFiles(dir);
 	}
 
 	private static List<Path> agentFiles(Path dir) {

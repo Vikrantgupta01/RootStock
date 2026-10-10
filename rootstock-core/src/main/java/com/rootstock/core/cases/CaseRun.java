@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -36,7 +37,7 @@ public final class CaseRun {
 	private final String graph;
 	private final String graphVersion;
 	private final String startedBy;
-	private final Instant startedAt = Instant.now();
+	private final Instant startedAt;
 	private final List<RunEvent> events = new ArrayList<>();
 	private final List<Consumer<RunEvent>> subscribers = new CopyOnWriteArrayList<>();
 	private final Map<String, Instant> nodeStarts = new HashMap<>();
@@ -49,6 +50,12 @@ public final class CaseRun {
 
 	CaseRun(String caseId, String runId, String pack, String graph, String graphVersion, String startedBy,
 			String input) {
+		this(caseId, runId, pack, graph, graphVersion, startedBy, input, Instant.now());
+	}
+
+	private CaseRun(String caseId, String runId, String pack, String graph, String graphVersion, String startedBy,
+			String input, Instant startedAt) {
+		this.startedAt = startedAt;
 		this.input = input;
 		this.caseId = caseId;
 		this.runId = runId;
@@ -56,6 +63,23 @@ public final class CaseRun {
 		this.graph = graph;
 		this.graphVersion = graphVersion;
 		this.startedBy = startedBy;
+	}
+
+	/**
+	 * A run as it was saved, e.g. after a restart. Its result is as stored (plain
+	 * maps and lists); a paused run resumes from its checkpoints, not from this.
+	 */
+	public static CaseRun restore(String caseId, String runId, String pack, String graph, String graphVersion,
+			String startedBy, String input, Instant startedAt, Status status, Pause pause, String error, String traceId,
+			List<RunEvent> events, Map<String, Object> result) {
+		CaseRun run = new CaseRun(caseId, runId, pack, graph, graphVersion, startedBy, input, startedAt);
+		run.status = status;
+		run.pause = pause;
+		run.error = error;
+		run.traceId = traceId;
+		run.events.addAll(events);
+		run.result = result == null ? Map.of() : result;
+		return run;
 	}
 
 	public String caseId() {
@@ -171,6 +195,27 @@ public final class CaseRun {
 		this.error = error;
 		this.result = result;
 		return add(RunEvent.Type.RUN_FAILED, null, null, error);
+	}
+
+	/** The run's channels as they stand once a decision is made, before it resumes (so its decider can see it). */
+	synchronized void decided(String reviewKey, Map<String, Object> review) {
+		Map<String, Object> next = new LinkedHashMap<>(result);
+		next.put(reviewKey, review);
+		this.result = next;
+	}
+
+	synchronized RunEvent resumed(String detail) {
+		this.status = Status.RUNNING;
+		this.pause = null;
+		this.error = null;
+		return add(RunEvent.Type.RUN_RESUMED, null, null, detail);
+	}
+
+	/** A run that was going when Rootstock stopped: it cannot carry on from where it was. */
+	synchronized RunEvent interrupted(String reason) {
+		this.status = Status.FAILED;
+		this.error = reason;
+		return add(RunEvent.Type.RUN_FAILED, null, null, reason);
 	}
 
 	synchronized RunEvent parked(String reason, Map<String, Object> result) {

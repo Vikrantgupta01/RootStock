@@ -29,7 +29,8 @@ import java.util.TreeSet;
  * <li>only a {@code tool-executor} node may set {@code allowWrites}, and only it
  * may be a write node in tools.yaml;</li>
  * <li>every path from START to a node that may write passes a
- * {@code human-review} node the run pauses before;</li>
+ * {@code human-review} node a person decides at: one the run pauses before, or
+ * any, in a graph only an approver's decision starts;</li>
  * <li>an agent's tools exist, are read-only, and are on its node's allowlist in
  * tools.yaml.</li>
  * </ul>
@@ -71,7 +72,77 @@ public final class GraphValidator {
 		}
 	}
 
+	/** One graph, as the only one in its pack. */
 	public List<GraphProblem> validate(PackGraph pack, Context context) {
+		return validatePack(List.of(pack), context);
+	}
+
+	/**
+	 * All of a pack's graphs: each on its own, then what spans them (agents used
+	 * by none, graph names, one graph started by submit, where outcomes lead).
+	 */
+	public List<GraphProblem> validatePack(List<PackGraph> graphs, Context context) {
+		List<GraphProblem> problems = new ArrayList<>();
+		for (PackGraph g : graphs) {
+			for (GraphProblem p : validateGraph(g, context)) {
+				// Each graph's checks name graph.yaml; say which file it really is.
+				GraphProblem located = p.file().equals(GRAPH) ? new GraphProblem(g.source(), p.at(), p.message()) : p;
+				if (!problems.contains(located)) {
+					problems.add(located);
+				}
+			}
+		}
+		if (graphs.isEmpty()) {
+			return problems;
+		}
+		PackGraph any = graphs.getFirst();
+		Set<String> names = new HashSet<>();
+		for (PackGraph g : graphs) {
+			if (!names.add(g.name())) {
+				problems.add(new GraphProblem(g.source(), "metadata.name", "graph '" + g.name() + "' is defined twice"));
+			}
+		}
+		List<String> entries = graphs.stream().filter(g -> !g.graph().trigger().decision()).map(PackGraph::name)
+				.sorted().toList();
+		if (entries.size() != 1) {
+			problems.add(new GraphProblem(any.source(), "trigger", "a pack needs exactly one graph a case starts with "
+					+ "(trigger kind submit); it has " + entries.size() + (entries.isEmpty() ? "" : ": " + entries)));
+		}
+		Map<String, PackGraph> byName = new HashMap<>();
+		graphs.forEach(g -> byName.put(g.name(), g));
+		for (PackGraph g : graphs) {
+			g.graph().outcomes().forEach((node, outcomes) -> {
+				for (int i = 0; i < outcomes.size(); i++) {
+					String next = outcomes.get(i).next();
+					if (next == null) {
+						continue;
+					}
+					PackGraph target = byName.get(next);
+					String at = "outcomes." + node + "[" + i + "].next";
+					if (target == null) {
+						problems.add(new GraphProblem(g.source(), at, "unknown graph '" + next + "'; the pack has "
+								+ new TreeSet<>(byName.keySet())));
+					}
+					else if (!target.graph().trigger().decision()) {
+						problems.add(new GraphProblem(g.source(), at, "graph '" + next + "' starts a new case (trigger "
+								+ "submit); a case can only go on to a graph started by a decision"));
+					}
+				}
+			});
+		}
+		// An agent may be used by any of the graphs, as a node or by a node's config (e.g. a judge).
+		for (AgentDefinition a : any.agents().values()) {
+			boolean used = graphs.stream().flatMap(g -> g.graph().nodes().stream())
+					.anyMatch(n -> a.name().equals(n.agent()) || n.config().values().stream().anyMatch(a.name()::equals));
+			if (!used) {
+				problems.add(new GraphProblem(PackGraphLoader.AGENTS_DIR + "/" + a.name() + ".yaml", "",
+						"agent '" + a.name() + "' is not used by any node"));
+			}
+		}
+		return problems;
+	}
+
+	private List<GraphProblem> validateGraph(PackGraph pack, Context context) {
 		List<GraphProblem> problems = new ArrayList<>();
 		GraphDefinition g = pack.graph();
 		Set<String> ids = new LinkedHashSet<>();
@@ -116,8 +187,61 @@ public final class GraphValidator {
 		Map<String, List<String>> next = edges(g, ids, channels, lists, objects, context, problems);
 		reachability(g, ids, next, problems);
 		runtime(g, ids, problems);
+		trigger(g, problems);
+		outcomes(g, ids, next, channels, lists, objects, problems);
 		writes(pack, context, next, problems);
 		return problems;
+	}
+
+	private void trigger(GraphDefinition g, List<GraphProblem> problems) {
+		if (g.trigger().decision() && g.trigger().approverRoles().isEmpty()) {
+			problems.add(new GraphProblem(GRAPH, "trigger.approverRoles", "a graph started by a decision says who may "
+					+ "make it"));
+		}
+	}
+
+	/**
+	 * When a graph says how the case stands after a run, it says so for every
+	 * node a run can end after, with a default last.
+	 */
+	private void outcomes(GraphDefinition g, Set<String> ids, Map<String, List<String>> next, Set<String> channels,
+			Set<String> lists, Set<String> objects, List<GraphProblem> problems) {
+		if (g.outcomes().isEmpty()) {
+			return;
+		}
+		g.outcomes().forEach((node, outcomes) -> {
+			String at = "outcomes." + node;
+			if (!ids.contains(node)) {
+				problems.add(new GraphProblem(GRAPH, at, "unknown node '" + node + "'"));
+				return;
+			}
+			if (!next.getOrDefault(node, List.of()).contains(GraphDefinition.END)) {
+				problems.add(new GraphProblem(GRAPH, at, "no run can end after '" + node + "' (it has no edge to END)"));
+			}
+			for (int i = 0; i < outcomes.size(); i++) {
+				GraphDefinition.Outcome o = outcomes.get(i);
+				boolean last = i == outcomes.size() - 1;
+				if (o.when().isEmpty() != last) {
+					problems.add(new GraphProblem(GRAPH, at + "[" + i + "]", last ? "the last outcome is the default "
+							+ "and has no 'when'" : "only the last outcome may leave out 'when'"));
+				}
+				o.when().forEach((k, v) -> {
+					try {
+						RouteConditions.parse(k, v, lists, objects, channels);
+					}
+					catch (IllegalArgumentException ex) {
+						problems.add(new GraphProblem(GRAPH, at + "[" + o.status() + "]", ex.getMessage()));
+					}
+				});
+			}
+		});
+		next.forEach((from, targets) -> {
+			if (targets.contains(GraphDefinition.END) && !from.equals(GraphDefinition.START)
+					&& !g.outcomes().containsKey(from)) {
+				problems.add(new GraphProblem(GRAPH, "outcomes", "a run can end after '" + from + "'; say how the case "
+						+ "then stands"));
+			}
+		});
 	}
 
 	/** Every channel a node or route may use: the declared ones and the engine's own. */
@@ -155,6 +279,12 @@ public final class GraphValidator {
 				.forEach(n -> usedBy.computeIfAbsent(n.agent(), k -> new ArrayList<>()).add(n.id()));
 
 		for (AgentDefinition a : pack.agents().values()) {
+			boolean usedHere = usedBy.containsKey(a.name()) || pack.graph().nodes().stream()
+					.anyMatch(n -> n.config().values().stream().anyMatch(v -> a.name().equals(v)));
+			if (!usedHere) {
+				// Checked against the graph that uses it; one no graph uses is reported for the pack.
+				continue;
+			}
 			String file = PackGraphLoader.AGENTS_DIR + "/" + a.name() + ".yaml";
 			AgentDefinition.Spec spec = a.spec();
 			if (context.registry().agent(spec.type()).isEmpty()) {
@@ -192,15 +322,6 @@ public final class GraphValidator {
 			}
 			if (spec.tools() != null) {
 				tools(a, file, usedBy.getOrDefault(a.name(), List.of()), context.tools(), problems);
-			}
-			if (!usedBy.containsKey(a.name())) {
-				// Not an error: an agent can be referenced by node config (e.g. a judge), but say so.
-				// Only plain-node configs refer to agents, so check those.
-				boolean referenced = pack.graph().nodes().stream()
-						.anyMatch(n -> n.config().values().stream().anyMatch(v -> a.name().equals(v)));
-				if (!referenced) {
-					problems.add(new GraphProblem(file, "", "agent '" + a.name() + "' is not used by any node"));
-				}
 			}
 		}
 	}
@@ -376,10 +497,6 @@ public final class GraphValidator {
 
 	private void runtime(GraphDefinition g, Set<String> ids, List<GraphProblem> problems) {
 		GraphDefinition.Runtime r = g.runtime();
-		if (!"memory".equals(r.checkpointer())) {
-			problems.add(new GraphProblem(GRAPH, "runtime.checkpointer", "'" + r.checkpointer()
-					+ "' is not available yet; use memory"));
-		}
 		for (String n : r.interruptBefore()) {
 			if (!ids.contains(n)) {
 				problems.add(new GraphProblem(GRAPH, "runtime.interruptBefore", "unknown node '" + n + "'"));
@@ -415,10 +532,13 @@ public final class GraphValidator {
 		if (writers.isEmpty()) {
 			return;
 		}
-		// Gates: human-review nodes the run pauses before. Remove them, and no writer may be reachable.
+		// Gates: human-review nodes a person decides at. Either the run pauses before
+		// one, or the whole graph is started only by an approver's decision (which the
+		// review node then records). Remove the gates, and no writer may be reachable.
+		boolean approverStarted = g.trigger().decision() && !g.trigger().approverRoles().isEmpty();
 		Set<String> gates = new HashSet<>();
 		for (GraphDefinition.NodeSpec n : g.nodes()) {
-			if (HUMAN_REVIEW.equals(n.type()) && g.runtime().interruptBefore().contains(n.id())) {
+			if (HUMAN_REVIEW.equals(n.type()) && (approverStarted || g.runtime().interruptBefore().contains(n.id()))) {
 				gates.add(n.id());
 			}
 		}
@@ -426,7 +546,8 @@ public final class GraphValidator {
 		for (String writer : writers) {
 			if (ungated.contains(writer)) {
 				problems.add(new GraphProblem(GRAPH, "node " + writer, "can be reached from START without passing a "
-						+ "human-review node in runtime.interruptBefore; every write needs a human approval first"
+						+ "human-review node that a person decides at (one in runtime.interruptBefore, or any, in a "
+						+ "graph started by an approver's decision); every write needs a human approval first"
 						+ (gates.isEmpty() ? " (there is no such node)" : " (gates: " + new TreeSet<>(gates) + ")")));
 			}
 		}

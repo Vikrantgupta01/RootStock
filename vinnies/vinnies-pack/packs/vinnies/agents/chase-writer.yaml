@@ -9,4 +9,4 @@ spec:
   prompt: { name: vinnies/draft-chase, label: production }
   input:  { record: $.record, issues: $.issues }
   output: { writeTo: actions }
-  limits: { timeoutSeconds: 30 }
+  limits: { timeoutSeconds: 60, retries: 1 }

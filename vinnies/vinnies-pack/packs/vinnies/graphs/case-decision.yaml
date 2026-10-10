@@ -1,0 +1,66 @@
+# A coordinator's decision on a case waiting for one, started by that decision
+# (only a coordinator, or an admin, may start it). The case may have waited
+# days, so before anything is written it is checked again against fresh data:
+# anything new goes back to the coordinator instead.
+apiVersion: rootstock/v1
+kind: Graph
+metadata:
+  name: case-decision
+  version: 1.0.0
+  pack: vinnies
+  description: A coordinator's decision in; the case re-checked, then written, returned or closed.
+
+trigger:
+  kind: decision
+  approverRoles: [coordinator]
+
+state:
+  channels:
+    record:    { reducer: replace, description: The case record (the coordinator's version if they edited it). }
+    context:   { reducer: merge, description: What enrich looked up again in the Vinnies system. }
+    issues:    { reducer: replace, description: Problems found by validate on the fresh data. }
+    questions: { reducer: replace, description: Questions for the member. }
+    actions:   { reducer: replace, description: The approved proposal. }
+    audit:     { reducer: append, description: What each node did in every run of the case. }
+
+nodes:
+  - id: review
+    type: human-review
+    description: Records the coordinator's decision, which started this run.
+  - { id: enrich, agent: context-enricher }
+  # The deterministic checks only: the point is Vinnies' data as it is today.
+  # The judge compared the record with the notes at intake; neither has changed
+  # (an edit is the coordinator's own), and a model's findings vary from run to
+  # run, which would send an unchanged case back for nothing.
+  - { id: validate, type: rules }
+  - id: commit
+    type: tool-executor
+    config: { allowWrites: true }
+
+edges:
+  - { from: START, to: review }
+  - from: review
+    route:
+      - { when: { review.decision: REJECTED }, to: END }
+      - { default: enrich }
+  - { from: enrich, to: validate }
+  - from: validate
+    route:
+      # The fresh check found something blocking, or something the coordinator
+      # was not shown: back to them, with the new findings.
+      - { when: { issues.anySeverity: BLOCKING }, to: END }
+      - { when: { issues.unseenBy: review }, to: END }
+      - { default: commit }
+  - { from: commit, to: END }
+
+outcomes:
+  review:   [{ status: CLOSED }]
+  validate: [{ status: AWAITING_DECISION, next: case-decision }]
+  commit:
+    # A message to the household is sent; the case waits for their reply (Iteration 12).
+    - { when: { actions.includesType: CHASE_MESSAGE }, status: AWAITING_EXTERNAL }
+    - { status: DONE }
+
+runtime:
+  checkpointer: memory
+  maxSteps: 20

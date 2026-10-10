@@ -5,4 +5,4 @@ input: |
   Happy for us to share details.
 expect:
   issues: [urgent-needs-follow-up]
-  pausedAt: clarify
+  status: AWAITING_SUBMITTER

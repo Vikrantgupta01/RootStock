@@ -5,4 +5,5 @@ input: |
   Happy for us to share details.
 expect:
   issues: [R03-frequency]
-  pausedAt: review
+  actions: [FOLLOW_UP]
+  status: AWAITING_DECISION

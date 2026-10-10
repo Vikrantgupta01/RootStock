@@ -1,19 +1,27 @@
 package com.rootstock.autoconfig.graph;
 
+import com.rootstock.core.cases.CaseDecisions;
 import com.rootstock.core.cases.CaseGraphs;
 import com.rootstock.core.cases.CaseRunService;
 import com.rootstock.core.cases.RunObserver;
+import com.rootstock.core.cases.CaseStore;
+import com.rootstock.core.cases.JdbcCaseStore;
+import com.rootstock.core.cases.JdbcRunStore;
 import com.rootstock.core.cases.RunRegistry;
+import com.rootstock.core.cases.RunStore;
 import com.rootstock.core.graph.CaseGraph;
 import com.rootstock.core.graph.CaseRouter;
 import com.rootstock.core.graph.GraphCompiler;
 import com.rootstock.core.graph.GraphDefinitionException;
 import com.rootstock.core.graph.GraphProblem;
 import com.rootstock.core.graph.GraphValidator;
+import com.rootstock.core.graph.JdbcCheckpointSaver;
 import com.rootstock.core.graph.NodeFactory;
 import com.rootstock.core.graph.NodeRegistry;
 import com.rootstock.core.graph.PackGraph;
 import com.rootstock.core.graph.PackGraphLoader;
+import com.rootstock.core.graph.nodes.DrafterAgent;
+import com.rootstock.core.graph.nodes.HumanReviewNode;
 import com.rootstock.core.graph.nodes.IngestNode;
 import com.rootstock.core.graph.nodes.JudgeAgent;
 import com.rootstock.core.graph.nodes.RulesNode;
@@ -42,6 +50,8 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.core.JdbcTemplate;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Loads, checks and compiles the graph of every pack that has a
@@ -100,15 +110,52 @@ public class GraphConfiguration {
 	}
 
 	@Bean
-	RunRegistry runRegistry(ObjectProvider<RunObserver> observers) {
-		return new RunRegistry(observers.orderedStream().toList());
+	HumanReviewNode humanReviewNode() {
+		return new HumanReviewNode();
+	}
+
+	@Bean
+	DrafterAgent drafterAgent(LlmService llm, PromptRegistry prompts) {
+		return new DrafterAgent(llm, prompts, Clock.systemDefaultZone());
+	}
+
+	/** Checkpoints for graphs with {@code runtime.checkpointer: postgres}. */
+	@Bean
+	JdbcCheckpointSaver jdbcCheckpointSaver(JdbcTemplate jdbc) {
+		return new JdbcCheckpointSaver(jdbc);
+	}
+
+	@Bean
+	CaseStore caseStore(JdbcTemplate jdbc) {
+		return new JdbcCaseStore(jdbc);
+	}
+
+	@Bean
+	RunStore runStore(JdbcTemplate jdbc) {
+		return new JdbcRunStore(jdbc, JsonMapper.builder().build());
+	}
+
+	@Bean
+	RunRegistry runRegistry(ObjectProvider<RunObserver> observers, RunStore store) {
+		RunRegistry runs = new RunRegistry(observers.orderedStream().toList(), store);
+		int interrupted = runs.failInterrupted();
+		if (interrupted > 0) {
+			log.warn("{} run(s) were in progress when Rootstock last stopped; marked FAILED", interrupted);
+		}
+		return runs;
+	}
+
+	@Bean
+	CaseDecisions caseDecisions(CaseRunService service, RunRegistry runs, CaseGraphs graphs) {
+		return new CaseDecisions(service, runs, graphs, Clock.systemUTC());
 	}
 
 	@Bean
 	CaseGraphs caseGraphs(PackRegistry packs, NodeRegistry registry, ObjectProvider<CaseRouter> routerBeans,
-			ToolCatalog tools, RunRegistry runs, LlmService llm, Map<String, RuleKind> ruleKinds) {
+			ToolCatalog tools, RunRegistry runs, LlmService llm, Map<String, RuleKind> ruleKinds,
+			JdbcCheckpointSaver checkpoints) {
 		List<CaseRouter> routers = routerBeans.orderedStream().toList();
-		GraphCompiler compiler = new GraphCompiler(registry, routers, runs);
+		GraphCompiler compiler = new GraphCompiler(registry, routers, runs, checkpoints);
 		PackGraphLoader loader = new PackGraphLoader();
 		GraphValidator validator = new GraphValidator();
 		List<CaseGraph> graphs = new ArrayList<>();
@@ -117,24 +164,27 @@ public class GraphConfiguration {
 			if (!PackGraphLoader.hasGraph(dir)) {
 				continue;
 			}
-			PackGraph definition = loader.load(pack.name(), dir);
+			List<PackGraph> definitions = loader.loadAll(pack.name(), dir);
 			ResolvedOntology ontology = packs.ontology(pack.name()).orElse(null);
 			String missing = switch (pack.status()) {
 				case VALID -> null;
 				case NO_ONTOLOGY -> "the pack has no ontology.yaml";
 				case INVALID -> "the pack's ontology.yaml is invalid (" + pack.problems().size() + " problem(s))";
 			};
-			List<GraphProblem> problems = validator.validate(definition, new GraphValidator.Context(registry,
+			List<GraphProblem> problems = validator.validatePack(definitions, new GraphValidator.Context(registry,
 					new HashSet<>(routers.stream().map(CaseRouter::name).toList()), tools, ontology, missing, llm.profiles(), ruleKinds));
 			if (!problems.isEmpty()) {
 				throw new GraphDefinitionException("Pack '" + pack.name() + "' has an invalid graph", problems);
 			}
-			CaseGraph graph = compiler.compile(definition, ontology);
-			var g = definition.graph();
-			log.info("Graph '{}' {} of pack '{}': {} nodes, {} agents; pauses before {}, after {}", g.metadata().name(),
-					g.metadata().version(), pack.name(), g.nodes().size(), definition.agents().size(),
-					g.runtime().interruptBefore(), g.runtime().interruptAfter());
-			graphs.add(graph);
+			for (PackGraph definition : definitions) {
+				graphs.add(compiler.compile(definition, ontology));
+				var g = definition.graph();
+				log.info("Graph '{}' {} of pack '{}' (trigger {}{}): {} nodes, {} agents; pauses before {}, after {}",
+						g.metadata().name(), g.metadata().version(), pack.name(), g.trigger().kind(),
+						g.trigger().approverRoles().isEmpty() ? "" : " by " + g.trigger().approverRoles(),
+						g.nodes().size(), definition.agents().size(), g.runtime().interruptBefore(),
+						g.runtime().interruptAfter());
+			}
 		}
 		if (graphs.isEmpty()) {
 			log.info("No pack has a graph.yaml: cases cannot be submitted");
@@ -143,7 +193,7 @@ public class GraphConfiguration {
 	}
 
 	@Bean(destroyMethod = "close")
-	CaseRunService caseRunService(CaseGraphs graphs, RunRegistry runs) {
-		return new CaseRunService(graphs, runs);
+	CaseRunService caseRunService(CaseGraphs graphs, RunRegistry runs, CaseStore cases) {
+		return new CaseRunService(graphs, runs, cases);
 	}
 }

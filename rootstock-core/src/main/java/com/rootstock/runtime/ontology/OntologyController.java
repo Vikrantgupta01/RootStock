@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -53,14 +54,25 @@ public class OntologyController {
 				registry.ontology(name).map(OntologyViews::view).orElse(null));
 	}
 
+	/**
+	 * A projection's schema and glossary. {@code mode=extraction} gives the schema
+	 * a model fills in (any field may be null, no ids), which is also the shape a
+	 * reviewer edits.
+	 */
 	@GetMapping("/packs/{name}/projections/{projection}")
-	OntologyViews.ProjectionOutput projection(@PathVariable String name, @PathVariable String projection) {
+	OntologyViews.ProjectionOutput projection(@PathVariable String name, @PathVariable String projection,
+			@RequestParam(defaultValue = "strict") String mode) {
 		ResolvedOntology ontology = registry.ontology(name)
 				.orElseThrow(() -> notFound("No valid ontology in pack '" + name + "'"));
 		if (!ontology.own().projections().containsKey(projection)) {
 			throw notFound("No projection '" + projection + "' in pack '" + name + "'");
 		}
-		return new OntologyViews.ProjectionOutput(name, projection, schemas.generate(ontology, projection),
+		JsonSchemaGenerator.Mode schemaMode = switch (mode) {
+			case "strict" -> JsonSchemaGenerator.Mode.STRICT;
+			case "extraction" -> JsonSchemaGenerator.Mode.EXTRACTION;
+			default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "mode is strict or extraction");
+		};
+		return new OntologyViews.ProjectionOutput(name, projection, schemas.generate(ontology, projection, schemaMode),
 				glossaries.render(ontology, projection));
 	}
 

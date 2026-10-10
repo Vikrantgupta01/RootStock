@@ -1,4 +1,9 @@
 apiVersion: rootstock/v1
 kind: Agent
 metadata: { name: visit-planner }
-spec: { type: drafter, input: { record: $.record }, output: { writeTo: actions } }
+spec:
+  type: drafter
+  model: fast
+  prompt: { name: repairs/plan-visit }
+  input: { record: $.record }
+  output: { writeTo: actions }

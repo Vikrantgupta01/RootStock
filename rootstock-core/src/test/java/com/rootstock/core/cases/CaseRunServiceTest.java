@@ -253,6 +253,49 @@ class CaseRunServiceTest {
 	}
 
 	@Test
+	void aPausedRunResumesWithTheReviewersDecision() throws Exception {
+		CaseRunService service = service(RepairsPack.load(), RepairsPack.registry(), List.of());
+		CaseRun run = finished(service.start(null, "Tap leaking", Map.of(), "user-1"));
+		assertThat(run.pause()).isEqualTo(new CaseRun.Pause("review", true));
+
+		service.resume(run.caseId(), Map.of(CaseState.REVIEW, Map.of("decision", "APPROVED")), "Approved by user-2");
+		finished(run);
+
+		assertThat(run.status()).isEqualTo(CaseRun.Status.COMPLETED);
+		assertThat(nodesRun(run)).containsExactly("ingest", "extract", "enrich", "validate", "draft", "review", "commit");
+		assertThat(run.events()).extracting(RunEvent::type).contains(RunEvent.Type.RUN_RESUMED);
+		assertThat(observed).contains("run-paused", "run-completed");
+	}
+
+	@Test
+	void anEditGoesBackThroughValidationWithTheEditedRecord() throws Exception {
+		CaseRunService service = service(RepairsPack.load(), RepairsPack.registry(), List.of());
+		CaseRun run = finished(service.start(null, "Tap leaking", Map.of(), "user-1"));
+		Map<String, Object> edited = Map.of("priority", "URGENT", "reportedOn", "2026-10-01");
+
+		service.resume(run.caseId(), Map.of(CaseState.REVIEW, Map.of("decision", "EDITED"), "record", edited),
+				"Edited by user-2");
+		finished(run);
+
+		// validate, then draft again, then a new pause before review.
+		assertThat(run.pause()).isEqualTo(new CaseRun.Pause("review", true));
+		assertThat(nodesRun(run)).containsSubsequence("review", "validate", "draft");
+		assertThat(run.result()).containsEntry("record", edited);
+	}
+
+	@Test
+	void onlyAPausedRunCanBeResumed() throws Exception {
+		CaseRunService service = service(RepairsPack.load(), RepairsPack.registry(), List.of());
+		CaseRun run = finished(service.start(null, "Tap leaking", Map.of(), "user-1"));
+		service.resume(run.caseId(), Map.of(CaseState.REVIEW, Map.of("decision", "REJECTED")), "Rejected");
+		finished(run);
+
+		assertThat(run.status()).isEqualTo(CaseRun.Status.COMPLETED);
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.resume(run.caseId(), Map.of(), "again"))
+				.isInstanceOf(IllegalStateException.class).hasMessageContaining("COMPLETED");
+	}
+
+	@Test
 	void aLateSubscriberGetsEverythingSoFarThenTheRest() throws Exception {
 		CaseRun run = finished(service(RepairsPack.load(), RepairsPack.registry(), List.of())
 				.start(null, "Tap leaking", Map.of(), "user-1"));

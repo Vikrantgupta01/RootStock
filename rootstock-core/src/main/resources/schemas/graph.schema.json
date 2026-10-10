@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://rootstock.sinewlabs.example/schemas/graph.schema.json",
   "title": "Rootstock graph",
-  "description": "A domain pack's case-processing graph (graph.yaml): state channels, nodes, edges and runtime settings.",
+  "description": "One of a domain pack's case-processing graphs (graph.yaml, or a file in graphs/): how a run starts, state channels, nodes, edges, how the case stands when a run ends, and runtime settings.",
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "kind", "metadata", "nodes", "edges"],
@@ -18,6 +18,43 @@
         "version": { "type": "string" },
         "pack": { "type": "string" },
         "description": { "type": "string" }
+      }
+    },
+    "trigger": {
+      "description": "How a run starts: submit (a new case) or decision (a person's decision on a case waiting for one; approverRoles may make it).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["submit", "decision"] },
+        "approverRoles": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      }
+    },
+    "outcomes": {
+      "description": "By the node a run ends after: how the case then stands. The first entry whose when holds; one without when is the default.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {
+            "when": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "anyOf": [
+                  { "type": ["string", "number", "boolean"] },
+                  { "type": "array", "items": { "type": ["string", "number", "boolean"] } }
+                ]
+              }
+            },
+            "status": { "type": "string", "pattern": "^[A-Z][A-Z_]*$" },
+            "next": { "type": "string" }
+          }
+        }
       }
     },
     "state": {

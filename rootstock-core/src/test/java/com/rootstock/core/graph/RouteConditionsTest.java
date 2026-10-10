@@ -90,4 +90,22 @@ class RouteConditionsTest {
 		assertThatThrownBy(() -> RouteConditions.parse("record.household.exists", "yes", LISTS, OBJECTS, KNOWN))
 				.hasMessage("'record.household.exists': exists needs true or false, found 'yes'");
 	}
+
+	@Test
+	void unseenByHoldsWhenAnIssueWasNotAmongThoseTheReviewerSaw() {
+		Function<CaseState, String> route = RouteConditions.compile(List.of(
+				new GraphDefinition.RouteSpec(Map.of("issues.unseenBy", "review"), "back", null),
+				new GraphDefinition.RouteSpec(null, null, "commit")), Set.of("issues"),
+				Set.of("review"), Set.of("issues", "review"));
+		Object r02 = Map.of("ruleId", "R02", "path", "assistance[0].amountAud");
+		Object r03 = Map.of("ruleId", "R03", "path", "needs[0].category");
+		Map<String, Object> review = Map.of("seen", List.of("R02|assistance[0].amountAud"));
+
+		assertThat(route.apply(new CaseState(Map.of("issues", List.of(r02), "review", review))))
+				.isEqualTo("commit");
+		assertThat(route.apply(new CaseState(Map.of("issues", List.of(r02, r03), "review", review))))
+				.isEqualTo("back");
+		assertThat(route.apply(new CaseState(Map.of("issues", List.of(), "review", review))))
+				.isEqualTo("commit");
+	}
 }

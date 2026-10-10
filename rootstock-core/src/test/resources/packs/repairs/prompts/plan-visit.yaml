@@ -1,0 +1,7 @@
+name: repairs/plan-visit
+type: chat
+prompt:
+  - role: system
+    content: "Plan the visit. Allowed: {{actionTypes}}. Today {{today}}. Reply as {{schema}}"
+  - role: user
+    content: "Job: {{record}}"

@@ -13,7 +13,7 @@ import java.time.Instant;
 public record RunEvent(long seq, Type type, String node, Instant at, Long durationMs, String detail) {
 
 	public enum Type {
-		RUN_STARTED, NODE_STARTED, NODE_FINISHED, NODE_FAILED, RUN_PAUSED, RUN_COMPLETED, RUN_FAILED, RUN_PARKED;
+		RUN_STARTED, RUN_RESUMED, NODE_STARTED, NODE_FINISHED, NODE_FAILED, RUN_PAUSED, RUN_COMPLETED, RUN_FAILED, RUN_PARKED;
 
 		/** After one of these, nothing more happens until the run is resumed. */
 		public boolean ends() {

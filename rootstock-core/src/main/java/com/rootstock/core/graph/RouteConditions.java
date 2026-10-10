@@ -22,6 +22,8 @@ import tools.jackson.databind.json.JsonMapper;
  * the same list in one {@code when} must hold for the <em>same</em> item, so
  * "a BLOCKING issue the submitter can answer" means exactly that.</li>
  * <li>{@code issues.countAbove: 2}: the list has more than 2 items.</li>
+ * <li>{@code issues.unseenBy: review}: some item was not among those a person saw when they decided
+ * (the {@code seen} list in that channel, e.g. the issues a reviewer was shown); see {@link #signature}.</li>
  * <li>{@code record.household.exists: true}: the value is (or is not) there.</li>
  * <li>{@code review.decision: APPROVED}: the value equals one of the given values.</li>
  * </ul>
@@ -42,7 +44,16 @@ public final class RouteConditions {
 	private RouteConditions() {
 	}
 
-	sealed interface Condition permits ItemMatch, CountAbove, Exists, Equals {
+	sealed interface Condition permits ItemMatch, CountAbove, Exists, Equals, UnseenBy {
+	}
+
+	record UnseenBy(String channel, String seenIn) implements Condition {
+	}
+
+	/** The key {@code unseenBy} compares items by: an issue's rule and field. */
+	public static String signature(Object item) {
+		Map<String, Object> m = asMap(item);
+		return m.get("ruleId") + "|" + (m.get("path") == null ? "" : m.get("path"));
 	}
 
 	record ItemMatch(String channel, String field, Set<String> values) implements Condition {
@@ -86,6 +97,16 @@ public final class RouteConditions {
 				throw new IllegalArgumentException("'" + key + "': countAbove needs a whole number, found '" + value + "'");
 			}
 			return new CountAbove(channel, n);
+		}
+		if (test.equals("unseenBy")) {
+			if (!list || parts.length != 2) {
+				throw new IllegalArgumentException("'" + key + "': unseenBy works on a list channel, as <list>.unseenBy");
+			}
+			if (!(value instanceof String seenIn) || !objects.contains(seenIn)) {
+				throw new IllegalArgumentException("'" + key + "': unseenBy names the channel holding what was seen, "
+						+ "e.g. review; '" + value + "' is not one");
+			}
+			return new UnseenBy(channel, seenIn);
 		}
 		if (ITEM_FIELDS.containsKey(test) || test.equals("any")) {
 			if (!list) {
@@ -138,6 +159,26 @@ public final class RouteConditions {
 				.orElse(otherwise);
 	}
 
+	/**
+	 * How the case stands after a run of this graph ended after {@code lastNode}:
+	 * the first of its outcomes whose {@code when} holds; empty when the graph
+	 * says nothing about that node.
+	 */
+	public static Optional<GraphDefinition.Outcome> outcome(GraphDefinition g, String lastNode,
+			CaseState state) {
+		Set<String> lists = GraphValidator.lists(g);
+		Set<String> objects = GraphValidator.objects(g);
+		Set<String> known = GraphValidator.channels(g);
+		for (GraphDefinition.Outcome o : g.outcomes().getOrDefault(lastNode, List.of())) {
+			List<Condition> conditions = new ArrayList<>();
+			o.when().forEach((k, v) -> conditions.add(parse(k, v, lists, objects, known)));
+			if (holds(conditions, state)) {
+				return Optional.of(o);
+			}
+		}
+		return Optional.empty();
+	}
+
 	static boolean holds(List<Condition> conditions, CaseState state) {
 		Map<String, List<ItemMatch>> itemMatches = new LinkedHashMap<>();
 		for (Condition c : conditions) {
@@ -150,6 +191,14 @@ public final class RouteConditions {
 				}
 				case Exists e -> {
 					if (lookup(state, e.channel(), e.path()).isPresent() != e.expected()) {
+						return false;
+					}
+				}
+				case UnseenBy u -> {
+					Object seen = asMap(state.value(u.seenIn()).orElse(null)).get("seen");
+					Set<String> shown = seen instanceof List<?> l
+							? l.stream().map(String::valueOf).collect(Collectors.toSet()) : Set.of();
+					if (state.list(u.channel()).stream().map(RouteConditions::signature).allMatch(shown::contains)) {
 						return false;
 					}
 				}

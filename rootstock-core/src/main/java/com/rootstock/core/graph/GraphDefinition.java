@@ -6,22 +6,65 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * A pack's case-processing graph as written in {@code graph.yaml}: which nodes
- * there are, how they connect, and how a run is paused. Read by
- * {@link PackGraphLoader}, checked by {@link GraphValidator}, turned into a
- * LangGraph4j graph by {@link GraphCompiler}.
+ * One of a pack's case-processing graphs ({@code graph.yaml}, or a file in
+ * {@code graphs/}): how a run of it is started ({@code trigger}), which nodes
+ * there are, how they connect, how a run may pause, and how the case stands
+ * when a run ends ({@code outcomes}). Read by {@link PackGraphLoader}, checked
+ * by {@link GraphValidator}, turned into a LangGraph4j graph by
+ * {@link GraphCompiler}.
+ *
+ * <p>A case may go through several graphs, one short run each (e.g. intake,
+ * then a coordinator's decision): the case carries its channels from one run
+ * to the next, and an outcome names the graph that comes next.
  */
-public record GraphDefinition(Metadata metadata, State state, List<NodeSpec> nodes, List<EdgeSpec> edges,
-		Runtime runtime) {
+public record GraphDefinition(Metadata metadata, Trigger trigger, State state, List<NodeSpec> nodes,
+		List<EdgeSpec> edges, Map<String, List<Outcome>> outcomes, Runtime runtime) {
 
 	public static final String START = "START";
 	public static final String END = "END";
 
 	public GraphDefinition {
+		trigger = trigger == null ? new Trigger(Trigger.SUBMIT, null) : trigger;
 		state = state == null ? new State(Map.of()) : state;
 		nodes = List.copyOf(nodes);
 		edges = List.copyOf(edges);
+		outcomes = outcomes == null ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(outcomes));
 		runtime = runtime == null ? new Runtime(null, null, null, null) : runtime;
+	}
+
+	/**
+	 * How a run of this graph starts.
+	 *
+	 * @param kind          {@link #SUBMIT}: a new case, by anyone signed in; {@link #DECISION}: a person's
+	 *                      decision on a case waiting for one, by someone in {@code approverRoles} (or an admin)
+	 * @param approverRoles Cognito groups whose members may decide; required for a decision
+	 */
+	public record Trigger(String kind, List<String> approverRoles) {
+
+		public static final String SUBMIT = "submit";
+		public static final String DECISION = "decision";
+
+		public Trigger {
+			approverRoles = approverRoles == null ? List.of() : List.copyOf(approverRoles);
+		}
+
+		public boolean decision() {
+			return DECISION.equals(kind);
+		}
+	}
+
+	/**
+	 * How the case stands when a run ends after a node: the first whose
+	 * {@code when} holds (none is a default).
+	 *
+	 * @param status e.g. {@code AWAITING_DECISION}, {@code DONE}
+	 * @param next   the graph the case goes on with, started by its trigger; null when it is finished
+	 */
+	public record Outcome(Map<String, Object> when, String status, String next) {
+
+		public Outcome {
+			when = when == null ? Map.of() : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(when));
+		}
 	}
 
 	public record Metadata(String name, String version, String pack, String description) {
@@ -103,7 +146,7 @@ public record GraphDefinition(Metadata metadata, State state, List<NodeSpec> nod
 	}
 
 	/**
-	 * @param checkpointer    where paused runs are kept; only {@code memory} so far
+	 * @param checkpointer    where paused runs are kept: {@code memory} (lost on restart) or {@code postgres}
 	 * @param interruptBefore nodes a run pauses before, e.g. for human review
 	 * @param interruptAfter  nodes a run pauses after, e.g. once questions are asked
 	 * @param maxSteps        the most node steps one run may take

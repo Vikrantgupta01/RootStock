@@ -5,6 +5,12 @@ Vinnies-specific lives here; `rootstock-core` never references this folder.
 
 - `vinnies-mcp-server/` — the dummy St Vincent de Paul (Vinnies) application. It plays the
   client's existing system and exposes its functions as MCP tools. Its own Maven project.
+- `vinnies-frontend/` — the coordinators' review app (React + Vite, port 5174). It only talks to
+  Rootstock's API (`/api`, proxied in development) and signs in through it; it has no
+  backend of its own and never decides who may approve (Rootstock checks the `coordinator`
+  group). Its record form is generated from the ontology's extraction schema
+  (`/api/ontology/packs/vinnies/projections/case-extraction?mode=extraction`): don't
+  hand-code Vinnies fields there. `npm run build && npm run lint` before committing.
 - `vinnies-pack/` — Rootstock's configuration for Vinnies (Sinew's side, not the client's).
   Rootstock reads `packs/vinnies/tools.yaml` through `ROOTSTOCK_TOOLS_FILE`. **A new MCP tool
   is only callable by Rootstock once it is listed there**, with READ or WRITE and on a
@@ -15,7 +21,9 @@ Vinnies-specific lives here; `rootstock-core` never references this folder.
   `.env` loaded) and review the diff; never edit `generated/` by hand. In flow mappings
   (`{ ... }`), a description with a comma must move to block style, or the loader reports
   an unknown key.
-  `packs/vinnies/graph.yaml` and `packs/vinnies/agents/` define the case-intake graph.
+  `packs/vinnies/graphs/` (case-intake, case-decision) and `packs/vinnies/agents/` define how a
+  case goes: intake ends with the case waiting for a coordinator; their decision starts
+  case-decision, which re-checks on fresh data before committing.
   Rootstock checks them at startup and won't start if they're broken or unsafe (for
   example, a path to `commit` that skips `review`). An agent's tools must also be on its
   node's allowlist in `tools.yaml`, and its projection must exist in `ontology.yaml`.

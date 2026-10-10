@@ -11,6 +11,15 @@ public interface RunObserver {
 
 	void runStarted(CaseRun run, String input);
 
+	/**
+	 * A paused run carries on, e.g. after a review; called on the thread that
+	 * resumed it.
+	 *
+	 * @param note what resumed it, e.g. "Approved by …"
+	 */
+	default void runResumed(CaseRun run, String note) {
+	}
+
 	void nodeStarted(CaseRun run, String node);
 
 	void nodeFinished(CaseRun run, String node, Map<String, Object> update);

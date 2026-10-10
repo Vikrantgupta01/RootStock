@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.rootstock.core.auth.AuthContext;
 import com.rootstock.core.auth.UserRole;
+import com.rootstock.core.cases.CaseDecisions;
 import com.rootstock.core.cases.CaseGraphs;
 import com.rootstock.core.cases.CaseRun;
 import com.rootstock.core.cases.CaseRunService;
@@ -19,6 +20,7 @@ import com.rootstock.core.graph.GraphCompiler;
 import com.rootstock.core.graph.RepairsPack;
 import com.rootstock.runtime.common.GlobalExceptionHandler;
 import com.rootstock.runtime.observability.LangfuseLinks;
+import java.time.Clock;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
@@ -69,10 +71,27 @@ class CaseControllerTest {
 		CaseRunService caseRunService(CaseGraphs graphs, RunRegistry runs) {
 			return new CaseRunService(graphs, runs);
 		}
+
+		@Bean
+		CaseDecisions caseDecisions(CaseRunService service, RunRegistry runs, CaseGraphs graphs) {
+			return new CaseDecisions(service, runs, graphs, Clock.systemUTC());
+		}
 	}
 
-	private static void signIn(String user, UserRole role) {
-		AuthContext.set(new AuthContext.Principal(user, user + "@example.com", role, Set.of()));
+	private static void signIn(String user, UserRole role, String... groups) {
+		AuthContext.set(new AuthContext.Principal(user, user + "@example.com", role, Set.of(groups)));
+	}
+
+	private String statusOf(String caseId) throws Exception {
+		for (int i = 0; i < 200; i++) {
+			String body = mockMvc.perform(get("/api/cases/" + caseId)).andReturn().getResponse().getContentAsString();
+			String status = com.jayway.jsonpath.JsonPath.read(body, "$.status");
+			if (!"RUNNING".equals(status)) {
+				return status;
+			}
+			Thread.sleep(25);
+		}
+		return "RUNNING";
 	}
 
 	@AfterEach
@@ -142,6 +161,58 @@ class CaseControllerTest {
 
 		signIn("admin-1", UserRole.ADMIN);
 		mockMvc.perform(get("/api/cases/" + caseId)).andExpect(status().isOk());
+	}
+
+	// The repairs graph's review node: approverRoles [property-manager].
+
+	@Test
+	void aCaseWaitingForReviewIsListedForItsApproversOnlyAndSaysWhoMayDecide() throws Exception {
+		signIn("member-1", UserRole.VIEWER);
+		String caseId = submit("{\"input\":\"Tap leaking\"}");
+		mockMvc.perform(get("/api/cases/" + caseId)).andExpect(jsonPath("$.waitingFor[0]").value("property-manager"));
+		mockMvc.perform(get("/api/cases/awaiting-decision")).andExpect(jsonPath("$").isEmpty());
+
+		signIn("manager-1", UserRole.VIEWER, "property-manager");
+		mockMvc.perform(get("/api/cases/awaiting-decision"))
+				.andExpect(jsonPath("$[?(@.caseId == '" + caseId + "')]").isNotEmpty());
+		// An approver may open the case they are to decide, though they did not submit it.
+		mockMvc.perform(get("/api/cases/" + caseId)).andExpect(status().isOk());
+	}
+
+	@Test
+	void onlyAnApproverOrAdminMayDecideAndTheDecisionResumesTheRun() throws Exception {
+		signIn("member-1", UserRole.VIEWER);
+		String caseId = submit("{\"input\":\"Tap leaking\"}");
+		String approve = "{\"decision\":\"APPROVED\",\"comment\":\"Book it\"}";
+
+		// The submitter is not an approver: the case is theirs to see, not to decide.
+		mockMvc.perform(post("/api/cases/" + caseId + "/decision").contentType(MediaType.APPLICATION_JSON).content(approve))
+				.andExpect(status().isForbidden());
+
+		signIn("manager-1", UserRole.VIEWER, "property-manager");
+		mockMvc.perform(post("/api/cases/" + caseId + "/decision").contentType(MediaType.APPLICATION_JSON).content(approve))
+				.andExpect(status().isAccepted());
+		assertThat(statusOf(caseId)).isEqualTo("COMPLETED");
+		mockMvc.perform(get("/api/cases/" + caseId))
+				.andExpect(jsonPath("$.events[?(@.type == 'RUN_RESUMED')].detail")
+						.value("APPROVED by manager-1@example.com: Book it"));
+
+		// Decided once: there is nothing left to decide.
+		signIn("admin-1", UserRole.ADMIN);
+		mockMvc.perform(post("/api/cases/" + caseId + "/decision").contentType(MediaType.APPLICATION_JSON).content(approve))
+				.andExpect(status().isConflict());
+	}
+
+	@Test
+	void anEditNeedsTheEditedRecord() throws Exception {
+		signIn("member-1", UserRole.VIEWER);
+		String caseId = submit("{\"input\":\"Tap leaking\"}");
+
+		signIn("admin-1", UserRole.ADMIN);
+		mockMvc.perform(post("/api/cases/" + caseId + "/decision").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"decision\":\"EDITED\"}")).andExpect(status().isBadRequest());
+		mockMvc.perform(post("/api/cases/" + caseId + "/decision").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"decision\":\"MAYBE\"}")).andExpect(status().isBadRequest());
 	}
 
 	@Test

@@ -13,6 +13,7 @@ import org.bsc.langgraph4j.CompileConfig;
 import org.bsc.langgraph4j.GraphStateException;
 import org.bsc.langgraph4j.StateGraph;
 import org.bsc.langgraph4j.action.NodeAction;
+import org.bsc.langgraph4j.checkpoint.BaseCheckpointSaver;
 import org.bsc.langgraph4j.checkpoint.MemorySaver;
 
 /**
@@ -20,20 +21,32 @@ import org.bsc.langgraph4j.checkpoint.MemorySaver;
  * by its factory and wrapped so the {@link NodeListener} hears when it starts and
  * ends; each edge plain, routed by conditions, or routed by a named
  * {@link CaseRouter}; pauses ({@code interruptBefore/After}) and the step limit
- * from {@code runtime}. Runs are checkpointed in memory for now, so a paused run
- * does not survive a restart.
+ * from {@code runtime}. Runs are checkpointed as {@code runtime.checkpointer}
+ * says: in memory (a paused run is lost on restart) or in Postgres
+ * ({@link JdbcCheckpointSaver}).
  */
 public final class GraphCompiler {
 
 	private final NodeRegistry registry;
 	private final Map<String, CaseRouter> routers;
 	private final NodeListener listener;
+	private final BaseCheckpointSaver durable;
 
-	public GraphCompiler(NodeRegistry registry, List<CaseRouter> routers, NodeListener listener) {
+	/**
+	 * @param durable the checkpointer for {@code runtime.checkpointer: postgres}; null when there is none
+	 */
+	public GraphCompiler(NodeRegistry registry, List<CaseRouter> routers, NodeListener listener,
+			BaseCheckpointSaver durable) {
 		this.registry = registry;
 		this.routers = new HashMap<>();
 		routers.forEach(r -> this.routers.put(r.name(), r));
 		this.listener = listener;
+		this.durable = durable;
+	}
+
+	/** In-memory checkpoints only. */
+	public GraphCompiler(NodeRegistry registry, List<CaseRouter> routers, NodeListener listener) {
+		this(registry, routers, listener, null);
 	}
 
 	public CaseGraph compile(PackGraph pack, ResolvedOntology ontology) {
@@ -63,7 +76,7 @@ public final class GraphCompiler {
 				graph.addConditionalEdges(from, edge_async(decide::apply), targets);
 			}
 			return new CaseGraph(pack, graph.compile(CompileConfig.builder()
-					.checkpointSaver(new MemorySaver())
+					.checkpointSaver(saver(pack.pack(), g.runtime().checkpointer()))
 					.interruptsBefore(g.runtime().interruptBefore())
 					.interruptsAfter(g.runtime().interruptAfter())
 					.recursionLimit(g.runtime().maxSteps())
@@ -72,6 +85,17 @@ public final class GraphCompiler {
 		catch (GraphStateException e) {
 			throw new IllegalStateException("Pack '" + pack.pack() + "': LangGraph4j rejected the graph: " + e.getMessage(), e);
 		}
+	}
+
+	private BaseCheckpointSaver saver(String pack, String checkpointer) {
+		if ("postgres".equals(checkpointer)) {
+			if (durable == null) {
+				throw new IllegalStateException("Pack '" + pack + "' asks for runtime.checkpointer: postgres, but no "
+						+ "durable checkpointer is configured");
+			}
+			return durable;
+		}
+		return new MemorySaver();
 	}
 
 	private Function<CaseState, String> routed(GraphDefinition.EdgeSpec edge) {

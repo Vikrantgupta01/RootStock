@@ -5,4 +5,5 @@ input: |
   Catherine agreed to us sharing her details for referrals.
 expect:
   issues: [R02-amount-limit]
-  pausedAt: review
+  actions: [FOLLOW_UP]
+  status: AWAITING_DECISION

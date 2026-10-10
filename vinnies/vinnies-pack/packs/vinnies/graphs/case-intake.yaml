@@ -1,25 +1,27 @@
-  # The Vinnies case-intake graph: how a member's visit notes become an approved
-# case. Rootstock compiles this into a LangGraph4j graph at startup and refuses
-# to start if it is broken or unsafe (see rootstock-core's GraphValidator).
-# Node and agent types are Rootstock's building blocks; until later iterations
-# they are stubs that do no real work.
+# How a member's visit notes become a case ready for a coordinator: one short
+# run, from the notes to a draft, then the case waits (as data, not as a paused
+# run) for the coordinator's decision, which starts graphs/case-decision.yaml.
+# Rootstock refuses to start if a graph is broken or unsafe (GraphValidator).
 apiVersion: rootstock/v1
 kind: Graph
 metadata:
   name: case-intake
-  version: 1.0.0
+  version: 2.0.0
   pack: vinnies
-  description: Visit notes in, an approved assistance case out.
+  description: Visit notes in, a checked and drafted case out, waiting for a coordinator.
+
+trigger: { kind: submit }
 
 state:
   channels:
     record:    { reducer: replace, description: The case record extracted from the notes. }
     context:   { reducer: merge, description: What enrich looked up in the Vinnies system. }
     # Replace, not append: each validate pass recomputes every issue, so one
-    # fixed in a clarify round must disappear. Their history is in the audit.
+    # fixed later must disappear. Their history is in the audit.
     issues:    { reducer: replace, description: Problems found by validate. }
     questions: { reducer: replace, description: Questions clarify asks the member. }
-    actions:   { reducer: append, description: Proposed changes for review. }
+    # Replace: each draft is the whole proposal.
+    actions:   { reducer: replace, description: Proposed changes for review. }
     audit:     { reducer: append, description: What each node did. }
 
 nodes:
@@ -34,17 +36,10 @@ nodes:
     config: { questionWriter: clarifier, maxRounds: 2 }
   - id: draft
     agent: action-drafter
-    config: { actionType: ASSISTANCE }
+    config: { actionTypes: [REFERRAL, FOLLOW_UP] }
   - id: chase
     agent: chase-writer
     config: { actionType: CHASE_MESSAGE }
-  - id: review
-    type: human-review
-    config: { approverRoles: [coordinator] }
-  - id: commit
-    type: tool-executor
-    config: { allowWrites: true }
-  - { id: await_input, type: await-input }
 
 edges:
   - { from: START,   to: ingest }
@@ -58,22 +53,18 @@ edges:
       # Any other blocking issue: only the household (or another party) can answer.
       - { when: { issues.anySeverity: BLOCKING }, to: chase }
       - { default: draft }
-  - { from: clarify, to: extract }
-  - { from: draft,   to: review }
-  - { from: chase,   to: review }
-  - from: review
-    route:
-      - { when: { review.decision: APPROVED }, to: commit }
-      - { when: { review.decision: EDITED },   to: validate }
-      - { default: END }
-  - from: commit
-    route:
-      - { when: { actions.includesType: CHASE_MESSAGE }, to: await_input }
-      - { default: END }
-  - { from: await_input, to: extract }
+  - { from: clarify, to: END }
+  - { from: draft,   to: END }
+  - { from: chase,   to: END }
+
+# How the case stands when the run ends, by the node it ended after.
+outcomes:
+  # Questions for the member (answering them comes in Iteration 11).
+  clarify: [{ status: AWAITING_SUBMITTER }]
+  # A draft, or a message to the household: a coordinator decides either way.
+  draft:   [{ status: AWAITING_DECISION, next: case-decision }]
+  chase:   [{ status: AWAITING_DECISION, next: case-decision }]
 
 runtime:
-  checkpointer: memory          # postgres from Iteration 9, so paused cases survive a restart
-  interruptAfter:  [clarify]    # questions asked: wait for the member's answers
-  interruptBefore: [review, await_input]   # a coordinator approves; parked until new information
+  checkpointer: memory          # runs are short; the case waits between runs, as data
   maxSteps: 40

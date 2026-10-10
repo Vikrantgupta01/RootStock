@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -76,6 +77,8 @@ class PackSamplesLiveIT {
 	@TestFactory
 	Stream<DynamicTest> everySampleIsExtractedAsExpected() throws IOException {
 		List<DynamicTest> tests = new ArrayList<>();
+		// An agent may appear in several of a pack's graphs; its samples run once.
+		Set<String> done = new HashSet<>();
 		for (CaseGraph graph : graphs.all()) {
 			PackGraph definition = graph.definition();
 			LoadedPack pack = packs.snapshot().packs().stream().filter(p -> p.name().equals(graph.pack())).findFirst()
@@ -90,7 +93,7 @@ class PackSamplesLiveIT {
 				GraphDefinition.NodeSpec node = definition.graph().nodes().stream()
 						.filter(n -> agent.name().equals(n.agent()) || n.config().containsValue(agent.name()))
 						.findFirst().orElse(null);
-				if (node == null) {
+				if (node == null || !done.add(graph.pack() + "/" + agent.name())) {
 					continue;
 				}
 				Path samples = Path.of(pack.location(), "samples", agent.name());

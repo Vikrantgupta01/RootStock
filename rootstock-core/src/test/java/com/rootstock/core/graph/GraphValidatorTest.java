@@ -16,6 +16,10 @@ class GraphValidatorTest {
 
 	private final GraphValidator validator = new GraphValidator();
 
+	static final String UNGATED = "can be reached from START without passing a human-review node that a person decides "
+			+ "at (one in runtime.interruptBefore, or any, in a graph started by an approver's decision); every write "
+			+ "needs a human approval first";
+
 	private List<String> problems(String file, UnaryOperator<String> edit) {
 		Path dir = RepairsPack.copyWith(tmp.resolve("repairs"), file, s -> {
 			String changed = edit.apply(s);
@@ -49,6 +53,8 @@ class GraphValidatorTest {
 						"agents/job-judge.yaml spec.model: unknown model profile 'fast'; configured (rootstock.llm.profiles): "
 								+ "[extraction]",
 						"agents/property-lookup.yaml spec.model: unknown model profile 'fast'; configured "
+								+ "(rootstock.llm.profiles): [extraction]",
+						"agents/visit-planner.yaml spec.model: unknown model profile 'fast'; configured "
 								+ "(rootstock.llm.profiles): [extraction]");
 	}
 
@@ -173,16 +179,14 @@ class GraphValidatorTest {
 	@Test
 	void aWriteNodeWithoutReviewBeforeItIsRejected() {
 		assertThat(problems("graph.yaml", s -> s.replace("{ from: draft,   to: review }", "{ from: draft,   to: commit }")))
-				.contains("graph.yaml node commit: can be reached from START without passing a human-review node in "
-						+ "runtime.interruptBefore; every write needs a human approval first (gates: [review])");
+				.contains("graph.yaml node commit: " + UNGATED + " (gates: [review])");
 	}
 
 	@Test
 	void reviewThatDoesNotPauseIsNoGate() {
 		assertThat(problems("graph.yaml", s -> s.replace("interruptBefore: [review, await_input]",
 				"interruptBefore: [await_input]")))
-				.contains("graph.yaml node commit: can be reached from START without passing a human-review node in "
-						+ "runtime.interruptBefore; every write needs a human approval first (there is no such node)");
+				.contains("graph.yaml node commit: " + UNGATED + " (there is no such node)");
 	}
 
 	@Test

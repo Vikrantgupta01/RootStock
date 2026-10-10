@@ -5,7 +5,9 @@ Monorepo, each folder built on its own (no root POM):
 - `rootstock-core/` — the domain-agnostic framework (Spring Boot backend, Maven).
 - `frontend/` — React 19 + Vite.
 - `vinnies/` — the Vinnies demo domain: `vinnies-mcp-server/` (dummy client app exposing MCP
-  tools, own database `vinnies_mock`). Its own Maven project; see `vinnies/CLAUDE.md`.
+  tools, own database `vinnies_mock`), `vinnies-pack/` (Rootstock's configuration for
+  Vinnies) and `vinnies-frontend/` (the coordinators' review app, calling Rootstock's API).
+  See `vinnies/CLAUDE.md`.
 
 ## Pinned versions
 
@@ -74,7 +76,7 @@ covers all three layers; it is the only class outside them.
 - A broken **ontology** must never stop Rootstock: the pack is listed INVALID with its
   problems. A broken or unsafe **graph or agent** does stop startup (`GraphValidator`): it
   decides what happens to a case and when Rootstock may write.
-- `graph.yaml` and `agents/` are checked against the JSON Schemas in
+- Graphs (`graph.yaml` or `graphs/*.yaml`), `agents/` and `rules.yaml` are checked against the JSON Schemas in
   `src/main/resources/schemas/`; change a schema and the loader together.
 - Node and agent types are Rootstock building blocks (`NodeFactory`); YAML only combines
   them. They are stubs (`core.graph.stub.StubNodes`) until each gets a real implementation
@@ -96,6 +98,13 @@ covers all three layers; it is the only class outside them.
   (`core.rules`), never pack code; a check no kind can express is a new `RuleKind` bean.
   Thresholds come from the client system's lookups with YAML defaults. A model's
   judgement (the `judge` agent) is only ever a WARNING.
+- Rootstock is the generic engine. A case goes through short runs, one graph each; between
+  runs it waits as data (`case_file`), never as a graph held open for days, because the
+  client's data can change meanwhile. A graph declares its `trigger` (`submit`, or `decision`
+  with `approverRoles`) and its `outcomes` (status and `next` graph per node a run can end
+  after). A decision graph re-checks the case on fresh data before it writes. Rootstock checks
+  who may decide; review queues and screens are the client's own app (`vinnies-frontend`),
+  never Rootstock UI or Rootstock tables.
 
 ## Not yet compliant
 

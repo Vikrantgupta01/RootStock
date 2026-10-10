@@ -6,6 +6,7 @@ import { request, streamEvents } from './http'
 export type RunStatus = 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'FAILED' | 'PARKED'
 export type RunEventType =
   | 'RUN_STARTED'
+  | 'RUN_RESUMED'
   | 'NODE_STARTED'
   | 'NODE_FINISHED'
   | 'NODE_FAILED'
@@ -31,9 +32,14 @@ export interface CaseRun {
   pack: string
   graph: string
   graphVersion: string | null
+  /** This run's status. */
   status: RunStatus
+  /** How the case stands, e.g. AWAITING_DECISION once its intake run has ended. */
+  caseStatus: string
   /** Where a paused run stopped: before the node (e.g. review) or after it (e.g. clarify). */
   pause: { node: string; before: boolean } | null
+  /** While it waits for a human decision: the roles that may make it (in the client's own app). */
+  waitingFor: string[] | null
   /** Why the run failed or was parked. */
   error: string | null
   startedAt: string
